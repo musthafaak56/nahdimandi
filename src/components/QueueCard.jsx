@@ -42,6 +42,14 @@ function QueueCard({ entry, position, busyAction, onAction }) {
           </button>
           <button
             type="button"
+            className="admin-button bg-amber-500/15 text-amber-500 ring-1 ring-amber-500/30 hover:bg-amber-500/22 focus:ring-amber-500/30"
+            onClick={() => onAction(entry.id, "bumpDown")}
+            disabled={busyAction}
+          >
+            Didn't Attend
+          </button>
+          <button
+            type="button"
             className="admin-button bg-admin-rose/15 text-admin-rose ring-1 ring-admin-rose/30 hover:bg-admin-rose/22 focus:ring-admin-rose/30"
             onClick={() => onAction(entry.id, "cancelled")}
             disabled={busyAction}

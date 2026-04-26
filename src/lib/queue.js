@@ -7,6 +7,7 @@ import {
   serverTimestamp,
   writeBatch,
   where,
+  getDocs,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -90,4 +91,47 @@ export async function updateQueueStatus(entryId, status) {
   batch.update(doc(db, "queue_public", entryId), { status });
 
   await batch.commit();
+}
+
+export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount) {
+  const currentIndex = currentEntries.findIndex((e) => e.id === entryId);
+  if (currentIndex === -1) return;
+
+  const batch = writeBatch(db);
+  const targetIndex = currentIndex + bumpCount;
+  
+  let newTimestamp;
+  if (targetIndex < currentEntries.length) {
+    const targetEntry = currentEntries[targetIndex];
+    if (targetEntry.timestamp && typeof targetEntry.timestamp.toDate === "function") {
+      newTimestamp = new Date(targetEntry.timestamp.toDate().getTime() + 10);
+    } else {
+      newTimestamp = serverTimestamp();
+    }
+  } else {
+    newTimestamp = serverTimestamp();
+  }
+
+  batch.update(doc(db, "queue", entryId), { timestamp: newTimestamp });
+  batch.update(doc(db, "queue_public", entryId), { timestamp: newTimestamp });
+
+  await batch.commit();
+}
+
+export async function getQueueHistoryByDate(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+
+  const historyQuery = query(
+    collection(db, "queue"),
+    where("timestamp", ">=", start),
+    where("timestamp", "<=", end),
+    orderBy("timestamp", "asc")
+  );
+  
+  const snapshot = await getDocs(historyQuery);
+  return mapDocs(snapshot);
 }

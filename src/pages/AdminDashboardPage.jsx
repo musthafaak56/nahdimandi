@@ -5,13 +5,16 @@ import SummaryBar from "../components/SummaryBar";
 import { useAuthState } from "../components/AuthProvider";
 import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
-import { subscribeToAdminQueue, updateQueueStatus } from "../lib/queue";
+import AdminHistoryView from "../components/AdminHistoryView";
+import { subscribeToAdminQueue, updateQueueStatus, bumpDownQueueEntry } from "../lib/queue";
 
 function AdminDashboardPage() {
   const { user } = useAuthState();
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [activeTab, setActiveTab] = useState("live");
+  const [bumpDownCount, setBumpDownCount] = useState(3);
 
   useEffect(() => {
     const unsubscribe = subscribeToAdminQueue(
@@ -33,7 +36,11 @@ function AdminDashboardPage() {
     setError("");
 
     try {
-      await updateQueueStatus(entryId, status);
+      if (status === "bumpDown") {
+        await bumpDownQueueEntry(entryId, deferredEntries, bumpDownCount);
+      } else {
+        await updateQueueStatus(entryId, status);
+      }
     } catch (actionError) {
       setError(
         getFriendlyError(
@@ -91,43 +98,88 @@ function AdminDashboardPage() {
           </div>
         </header>
 
-        <SummaryBar
-          totalWaiting={waitingEntries.length}
-          totalPartySize={totalPartySize}
-          nextUp={nextUp}
-        />
+        <div className="flex border-b border-admin-line/40">
+          <button
+            className={`px-6 py-3 font-admin text-sm font-semibold uppercase tracking-wider ${
+              activeTab === "live"
+                ? "border-b-2 border-admin-cyan text-admin-cyan"
+                : "text-admin-mute hover:text-admin-text"
+            }`}
+            onClick={() => setActiveTab("live")}
+          >
+            Live Queue
+          </button>
+          <button
+            className={`px-6 py-3 font-admin text-sm font-semibold uppercase tracking-wider ${
+              activeTab === "history"
+                ? "border-b-2 border-admin-cyan text-admin-cyan"
+                : "text-admin-mute hover:text-admin-text"
+            }`}
+            onClick={() => setActiveTab("history")}
+          >
+            History & Analytics
+          </button>
+        </div>
 
-        {error ? (
-          <div className="rounded-[1.5rem] border border-admin-rose/25 bg-admin-rose/10 px-5 py-4 text-sm text-admin-rose">
-            {error}
-          </div>
-        ) : null}
-
-        <section className="space-y-4">
-          {deferredEntries.length ? (
-            deferredEntries.map((entry, index) => (
-              <QueueCard
-                key={entry.id}
-                entry={entry}
-                position={index + 1}
-                busyAction={Boolean(busyAction)}
-                onAction={handleAction}
+        {activeTab === "history" ? (
+          <AdminHistoryView />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <SummaryBar
+                totalWaiting={waitingEntries.length}
+                totalPartySize={totalPartySize}
+                nextUp={nextUp}
               />
-            ))
-          ) : (
-            <div className="admin-panel p-10 text-center">
-              <p className="font-admin text-sm font-semibold uppercase tracking-[0.28em] text-admin-mute">
-                Queue clear
-              </p>
-              <h2 className="mt-3 font-admin text-3xl font-bold text-admin-text">
-                No active parties right now.
-              </h2>
-              <p className="mt-4 text-base leading-7 text-admin-mute">
-                New queue entries will appear here automatically as customers join.
-              </p>
+              <div className="flex items-center gap-3 rounded-xl border border-admin-line/30 bg-admin-base/50 p-3 sm:px-4">
+                <label className="text-sm font-medium text-admin-mute">
+                  Push down no-shows by:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={bumpDownCount}
+                  onChange={(e) => setBumpDownCount(Number(e.target.value))}
+                  className="w-16 rounded border border-admin-line/50 bg-admin-base py-1 px-2 text-center font-admin text-admin-text outline-none focus:border-amber-500"
+                />
+                <span className="text-sm text-admin-mute">parties</span>
+              </div>
             </div>
-          )}
-        </section>
+
+            {error ? (
+              <div className="rounded-[1.5rem] border border-admin-rose/25 bg-admin-rose/10 px-5 py-4 text-sm text-admin-rose">
+                {error}
+              </div>
+            ) : null}
+
+            <section className="space-y-4">
+              {deferredEntries.length ? (
+                deferredEntries.map((entry, index) => (
+                  <QueueCard
+                    key={entry.id}
+                    entry={entry}
+                    position={index + 1}
+                    busyAction={Boolean(busyAction)}
+                    onAction={handleAction}
+                  />
+                ))
+              ) : (
+                <div className="admin-panel p-10 text-center">
+                  <p className="font-admin text-sm font-semibold uppercase tracking-[0.28em] text-admin-mute">
+                    Queue clear
+                  </p>
+                  <h2 className="mt-3 font-admin text-3xl font-bold text-admin-text">
+                    No active parties right now.
+                  </h2>
+                  <p className="mt-4 text-base leading-7 text-admin-mute">
+                    New queue entries will appear here automatically as customers join.
+                  </p>
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </main>
   );
