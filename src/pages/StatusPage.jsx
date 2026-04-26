@@ -269,28 +269,12 @@ function StatusPage() {
           </div>
 
           {entry ? (
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            <div className="mt-8">
               <div className="rounded-[1.5rem] border border-stone-900/10 bg-white/60 p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-clove/70">
                   Guest
                 </p>
                 <p className="mt-2 text-xl font-semibold text-ink">{entry.name}</p>
-              </div>
-              <div className="rounded-[1.5rem] border border-stone-900/10 bg-white/60 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-clove/70">
-                  Party size
-                </p>
-                <p className="mt-2 text-xl font-semibold text-ink">
-                  {entry.partySize} guests
-                </p>
-              </div>
-              <div className="rounded-[1.5rem] border border-stone-900/10 bg-white/60 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-clove/70">
-                  Joined
-                </p>
-                <p className="mt-2 text-xl font-semibold text-ink">
-                  {formatClock(entry.timestamp)}
-                </p>
               </div>
             </div>
           ) : null}

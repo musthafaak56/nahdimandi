@@ -3,11 +3,11 @@ const ERROR_MESSAGES = {
   "auth/too-many-requests":
     "Too many login attempts. Wait a moment and try again.",
   "auth/network-request-failed":
-    "Firebase could not be reached. Check your connection and config.",
+    "The server could not be reached. Check your connection and config.",
   "permission-denied":
     "This queue entry belongs to a different browser session or device.",
   "not-found": "That queue entry no longer exists.",
-  unavailable: "Firebase is temporarily unavailable. Try again shortly.",
+  unavailable: "The server is temporarily unavailable. Try again shortly.",
 };
 
 export function getFriendlyError(error, fallback = "Something went wrong.") {
@@ -15,5 +15,6 @@ export function getFriendlyError(error, fallback = "Something went wrong.") {
     return fallback;
   }
 
-  return ERROR_MESSAGES[error.code] || error.message || fallback;
+  // To debug the Admin dashboard issue, show the real message
+  return ERROR_MESSAGES[error.code] || `[DEBUG] ${error.message} - ${fallback}`;
 }
