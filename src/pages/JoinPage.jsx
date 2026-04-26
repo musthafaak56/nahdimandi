@@ -5,7 +5,7 @@ import { getFriendlyError } from "../lib/errors";
 import { ensureAnonymousSession } from "../lib/firebase";
 import { createQueueEntry, LAST_QUEUE_ENTRY_KEY } from "../lib/queue";
 
-const PHONE_PATTERN = /^[+\d][\d\s()-]{6,}$/;
+const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 
 function JoinPage() {
   const navigate = useNavigate();
@@ -202,7 +202,7 @@ function JoinPage() {
               <input
                 className="field-input"
                 type="tel"
-                placeholder="+966 5X XXX XXXX"
+                placeholder="+91 9X XXX XXXXX"
                 autoComplete="tel"
                 value={form.phone}
                 onChange={(event) => updateField("phone", event.target.value)}

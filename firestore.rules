@@ -2,8 +2,37 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+    
+    function isOwner(resourceData) {
+      return isAuthenticated() && request.auth.uid == resourceData.ownerUid;
+    }
+
+    match /queue/{entryId} {
+      // Admins can read all queue entries, users can only read their own
+      allow read: if isAdmin() || isOwner(resource.data);
+      // Anyone can join the queue as long as they correctly assign their own UID
+      allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
+      // Admins can update status, users can only update their push notification tokens
+      allow update: if isAdmin() || (isOwner(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken', 'fcmTokenUpdatedAt']));
+      // Only admins can delete queue entries
+      allow delete: if isAdmin();
+    }
+
+    match /queue_public/{entryId} {
+      // Anyone can read the public queue (for dashboard/status position)
+      allow read: if isAuthenticated();
+      // Anyone can create their initial public queue representation when joining
+      allow create: if isAuthenticated();
+      // Only admins update or delete the public queue status
+      allow update, delete: if isAdmin();
     }
   }
 }
