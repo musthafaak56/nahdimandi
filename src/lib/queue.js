@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  documentId,
   onSnapshot,
   orderBy,
   query,
@@ -11,6 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { getRestaurantDateKey, getRestaurantDateRange } from "./time";
 
 export const ACTIVE_QUEUE_STATUSES = ["waiting", "notified"];
 export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
@@ -32,11 +34,13 @@ export async function createQueueEntry({
   const queueRef = doc(collection(db, "queue"));
   const queuePublicRef = doc(db, "queue_public", queueRef.id);
   const batch = writeBatch(db);
+  const queueDate = getRestaurantDateKey();
 
   batch.set(queueRef, {
     name,
     phone,
     partySize,
+    queueDate,
     status: "waiting",
     timestamp: serverTimestamp(),
     ownerUid,
@@ -46,6 +50,7 @@ export async function createQueueEntry({
 
   batch.set(queuePublicRef, {
     partySize,
+    queueDate,
     status: "waiting",
     timestamp: serverTimestamp(),
   });
@@ -162,19 +167,79 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, ext
 }
 
 export async function getQueueHistoryByDate(date) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
+  const datedCollectionQuery = query(
+    collection(db, "queue_by_date", date, "entries"),
+    orderBy("timestamp", "asc")
+  );
 
-  const historyQuery = query(
+  const datedCollectionSnapshot = await getDocs(datedCollectionQuery);
+  const datedCollectionEntries = mapDocs(datedCollectionSnapshot);
+  const existingIds = new Set(datedCollectionEntries.map((entry) => entry.queueId || entry.id));
+
+  const datedQuery = query(
+    collection(db, "queue"),
+    where("queueDate", "==", date),
+    orderBy("timestamp", "asc")
+  );
+
+  const datedSnapshot = await getDocs(datedQuery);
+  const datedEntries = mapDocs(datedSnapshot).filter((entry) => {
+    if (existingIds.has(entry.id)) {
+      return false;
+    }
+
+    existingIds.add(entry.id);
+    return true;
+  });
+
+  const { start, end } = getRestaurantDateRange(date);
+
+  const legacyQuery = query(
     collection(db, "queue"),
     where("timestamp", ">=", start),
     where("timestamp", "<=", end),
     orderBy("timestamp", "asc")
   );
-  
-  const snapshot = await getDocs(historyQuery);
-  return mapDocs(snapshot);
+
+  const legacySnapshot = await getDocs(legacyQuery);
+  const missingLegacyIds = legacySnapshot.docs
+    .map((document) => document.id)
+    .filter((id) => !existingIds.has(id));
+
+  if (missingLegacyIds.length === 0) {
+    return [...datedCollectionEntries, ...datedEntries].sort((left, right) => {
+      const leftMillis = typeof left.timestamp?.toMillis === "function" ? left.timestamp.toMillis() : 0;
+      const rightMillis = typeof right.timestamp?.toMillis === "function" ? right.timestamp.toMillis() : 0;
+      return leftMillis - rightMillis;
+    });
+  }
+
+  const legacyBatches = [];
+
+  for (let index = 0; index < missingLegacyIds.length; index += 10) {
+    legacyBatches.push(missingLegacyIds.slice(index, index + 10));
+  }
+
+  const legacyResults = await Promise.all(
+    legacyBatches.map((ids) =>
+      getDocs(
+        query(
+          collection(db, "queue"),
+          where(documentId(), "in", ids)
+        )
+      )
+    )
+  );
+
+  const mergedEntries = [
+    ...datedCollectionEntries,
+    ...datedEntries,
+    ...legacyResults.flatMap((snapshot) => mapDocs(snapshot)),
+  ];
+
+  return mergedEntries.sort((left, right) => {
+    const leftMillis = typeof left.timestamp?.toMillis === "function" ? left.timestamp.toMillis() : 0;
+    const rightMillis = typeof right.timestamp?.toMillis === "function" ? right.timestamp.toMillis() : 0;
+    return leftMillis - rightMillis;
+  });
 }

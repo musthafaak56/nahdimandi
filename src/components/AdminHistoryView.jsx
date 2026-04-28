@@ -1,14 +1,10 @@
 import { startTransition, useEffect, useState } from "react";
 import { getFriendlyError } from "../lib/errors";
 import { getQueueHistoryByDate } from "../lib/queue";
-import { formatClock } from "../lib/time";
+import { formatClock, getRestaurantDateKey, getRestaurantHour } from "../lib/time";
 
 function AdminHistoryView() {
-  const [date, setDate] = useState(() => {
-    const today = new Date();
-    // Format YYYY-MM-DD
-    return today.toISOString().split("T")[0];
-  });
+  const [date, setDate] = useState(() => getRestaurantDateKey());
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,8 +44,8 @@ function AdminHistoryView() {
   // Peak hour
   const hourCounts = {};
   history.forEach((e) => {
-    if (e.timestamp && typeof e.timestamp.toDate === "function") {
-      const hour = e.timestamp.toDate().getHours();
+    const hour = getRestaurantHour(e.timestamp);
+    if (hour !== null) {
       hourCounts[hour] = (hourCounts[hour] || 0) + 1;
     }
   });

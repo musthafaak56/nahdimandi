@@ -1,11 +1,13 @@
 import { initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { logger } from "firebase-functions";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 
 initializeApp();
 
 const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
+const adminDb = getFirestore();
 
 function buildNotificationPayload(queueId, status) {
   if (status === "seated") {
@@ -94,5 +96,33 @@ export const sendQueueStatusNotification = onDocumentUpdated(
     } catch (error) {
       logger.error("Failed to send FCM queue notification.", error);
     }
+  }
+);
+
+export const syncQueueEntryByDate = onDocumentWritten(
+  "queue/{queueId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const queueId = event.params.queueId;
+    const batch = adminDb.batch();
+
+    if (before?.queueDate && (!after || after.queueDate !== before.queueDate)) {
+      batch.delete(
+        adminDb.doc(`queue_by_date/${before.queueDate}/entries/${queueId}`)
+      );
+    }
+
+    if (after?.queueDate) {
+      batch.set(
+        adminDb.doc(`queue_by_date/${after.queueDate}/entries/${queueId}`),
+        {
+          ...after,
+          queueId,
+        }
+      );
+    }
+
+    await batch.commit();
   }
 );
