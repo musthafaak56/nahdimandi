@@ -6,7 +6,13 @@ import { useAuthState } from "../components/AuthProvider";
 import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 import AdminHistoryView from "../components/AdminHistoryView";
-import { subscribeToAdminQueue, updateQueueStatus, bumpDownQueueEntry } from "../lib/queue";
+import { 
+  subscribeToAdminQueue, 
+  updateQueueStatus, 
+  bumpDownQueueEntry,
+  subscribeToQueueSettings,
+  updateQueueSettings
+} from "../lib/queue";
 
 function AdminDashboardPage() {
   const { user } = useAuthState();
@@ -15,6 +21,7 @@ function AdminDashboardPage() {
   const [busyAction, setBusyAction] = useState("");
   const [activeTab, setActiveTab] = useState("live");
   const [bumpDownCount, setBumpDownCount] = useState(3);
+  const [notifiedTimeout, setNotifiedTimeout] = useState(30);
 
   useEffect(() => {
     const unsubscribe = subscribeToAdminQueue(
@@ -31,6 +38,28 @@ function AdminDashboardPage() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = subscribeToQueueSettings(
+      (settings) => {
+        setNotifiedTimeout(settings.notifiedTimeoutSeconds || 30);
+      },
+      (settingsError) => {
+        console.error("Failed to load settings:", settingsError);
+      }
+    );
+
+    return unsubscribe;
+  }, []);
+
+  async function handleUpdateTimeout(newValue) {
+    setNotifiedTimeout(newValue);
+    try {
+      await updateQueueSettings({ notifiedTimeoutSeconds: newValue });
+    } catch (err) {
+      setError("Failed to save timeout setting.");
+    }
+  }
+
   async function handleAction(entryId, status) {
     setBusyAction(`${entryId}:${status}`);
     setError("");
@@ -38,6 +67,8 @@ function AdminDashboardPage() {
     try {
       if (status === "bumpDown") {
         await bumpDownQueueEntry(entryId, deferredEntries, bumpDownCount);
+      } else if (status === "notified") {
+        await updateQueueStatus(entryId, status, { notifiedTimeoutSeconds: notifiedTimeout });
       } else {
         await updateQueueStatus(entryId, status);
       }
@@ -144,6 +175,22 @@ function AdminDashboardPage() {
                   className="w-16 rounded border border-admin-line/50 bg-admin-base py-1 px-2 text-center font-admin text-admin-text outline-none focus:border-amber-500"
                 />
                 <span className="text-sm text-admin-mute">parties</span>
+              </div>
+
+              <div className="flex items-center gap-3 rounded-xl border border-admin-line/30 bg-admin-base/50 p-3 sm:px-4">
+                <label className="text-sm font-medium text-admin-mute">
+                  Response timeout:
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="300"
+                  step="10"
+                  value={notifiedTimeout}
+                  onChange={(e) => handleUpdateTimeout(Number(e.target.value))}
+                  className="w-16 rounded border border-admin-line/50 bg-admin-base py-1 px-2 text-center font-admin text-admin-text outline-none focus:border-admin-cyan"
+                />
+                <span className="text-sm text-admin-mute">sec</span>
               </div>
             </div>
 

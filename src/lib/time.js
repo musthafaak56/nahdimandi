@@ -1,4 +1,4 @@
-function toMillis(value) {
+export function toMillis(value) {
   if (!value) {
     return null;
   }
