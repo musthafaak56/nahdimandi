@@ -12,7 +12,7 @@ function QueueCard({ entry, position, busyAction, onAction }) {
     }
 
     const startMillis = toMillis(entry.notifiedAt);
-    const timeoutSeconds = entry.notifiedTimeoutSeconds || 30;
+    const timeoutSeconds = entry.notifiedTimeoutSeconds || 31;
     const endMillis = startMillis + timeoutSeconds * 1000;
 
     const interval = setInterval(() => {
