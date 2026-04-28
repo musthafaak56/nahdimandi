@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
+import CustomerCredits from "../components/CustomerCredits";
 import LoadingScreen from "../components/LoadingScreen";
 import StatusBadge from "../components/StatusBadge";
 import { getFriendlyError } from "../lib/errors";
@@ -8,6 +9,10 @@ import { subscribeToForegroundMessages, requestQueueNotifications } from "../lib
 import { playReadyChime } from "../lib/sound";
 import { formatClock, toMillis } from "../lib/time";
 import { bumpDownQueueEntry, ACTIVE_QUEUE_STATUSES, subscribeToQueueEntry, subscribeToActiveQueue } from "../lib/queue";
+
+const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
+const REVIEW_REDIRECT_DELAY_MS = 2200;
+const REVIEW_REDIRECT_KEY_PREFIX = "nahdi-mandi:review-redirected:";
 
 function StatusPage() {
   const location = useLocation();
@@ -126,9 +131,16 @@ function StatusPage() {
 
     subscribeToForegroundMessages((payload) => {
       const queueId = payload?.data?.queueId;
+      const status = payload?.data?.status;
+      const title = payload?.notification?.title;
 
       if (queueId === entryId) {
-        setPushMessage(payload?.notification?.title || "Your table is ready.");
+        if (status === "seated") {
+          setPushMessage(title || "Thanks for dining with us. Please leave a review.");
+          return;
+        }
+
+        setPushMessage(title || "Your table is ready.");
       }
     }).then((nextUnsubscribe) => {
       if (isActive) {
@@ -157,6 +169,25 @@ function StatusPage() {
 
     previousStatusRef.current = status;
   }, [entry?.status]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !entryId || entry?.status !== "seated") {
+      return;
+    }
+
+    const redirectKey = `${REVIEW_REDIRECT_KEY_PREFIX}${entryId}`;
+
+    if (window.localStorage.getItem(redirectKey) === "done") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      window.localStorage.setItem(redirectKey, "done");
+      window.location.assign(GOOGLE_REVIEW_URL);
+    }, REVIEW_REDIRECT_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [entry?.status, entryId]);
 
   useEffect(() => {
     if (entry?.status !== "notified" || !entry?.notifiedAt || entry?.respondedAt) {
@@ -407,35 +438,54 @@ function StatusPage() {
 
               <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/60 p-5">
                 <p className="text-sm font-semibold text-ink/80">
-                  {notificationState === "granted"
+                  {entry.status === "seated"
+                    ? "Thanks for dining with us."
+                    : notificationState === "granted"
                     ? "Alerts are enabled for this queue entry."
                     : "Allow notifications to get a table-ready alert."}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-ink/65">
-                  {notificationState === "unsupported"
+                  {entry.status === "seated"
+                    ? "We're sending you to Google Maps so you can leave a quick review."
+                    : notificationState === "unsupported"
                     ? "This browser cannot receive Firebase push notifications."
                     : notificationState === "denied"
                       ? "Permission was denied. You can re-enable it from browser settings."
                       : "You will still see live updates on this page even without push."}
                 </p>
 
-                <button
-                  type="button"
-                  className="warm-button mt-5 w-full justify-center"
-                  onClick={enableNotifications}
-                  disabled={
-                    notificationState === "requesting" || notificationState === "granted"
-                  }
-                >
-                  {notificationState === "requesting"
-                    ? "Enabling notifications..."
-                    : notificationState === "granted"
-                      ? "Notifications enabled"
-                      : "Enable browser alerts"}
-                </button>
+                {entry.status === "seated" ? (
+                  <a
+                    href={GOOGLE_REVIEW_URL}
+                    className="warm-button mt-5 w-full justify-center"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Leave a Google review
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="warm-button mt-5 w-full justify-center"
+                    onClick={enableNotifications}
+                    disabled={
+                      notificationState === "requesting" || notificationState === "granted"
+                    }
+                  >
+                    {notificationState === "requesting"
+                      ? "Enabling notifications..."
+                      : notificationState === "granted"
+                        ? "Notifications enabled"
+                        : "Enable browser alerts"}
+                  </button>
+                )}
               </div>
 
-              {pushMessage || location.state?.justJoined ? (
+              {entry.status === "seated" ? (
+                <div className="mt-6 rounded-[1.5rem] border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-800">
+                  Redirecting to the Google review page in a moment.
+                </div>
+              ) : pushMessage || location.state?.justJoined ? (
                 <div className="mt-6 rounded-[1.5rem] border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800">
                   {pushMessage ||
                     "You're in the queue! We'll notify you when your table is ready."}
@@ -448,6 +498,8 @@ function StatusPage() {
             </div>
           </section>
         ) : null}
+
+        <CustomerCredits />
       </div>
     </main>
   );
