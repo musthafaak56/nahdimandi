@@ -5,9 +5,9 @@ import StatusBadge from "../components/StatusBadge";
 import { getFriendlyError } from "../lib/errors";
 import { ensureAnonymousSession } from "../lib/firebase";
 import { subscribeToForegroundMessages, requestQueueNotifications } from "../lib/notifications";
-import { ACTIVE_QUEUE_STATUSES, subscribeToActiveQueue, subscribeToQueueEntry } from "../lib/queue";
 import { playReadyChime } from "../lib/sound";
-import { formatClock } from "../lib/time";
+import { formatClock, toMillis } from "../lib/time";
+import { bumpDownQueueEntry, ACTIVE_QUEUE_STATUSES, subscribeToQueueEntry, subscribeToActiveQueue } from "../lib/queue";
 
 function StatusPage() {
   const location = useLocation();
@@ -20,6 +20,8 @@ function StatusPage() {
   const [showReadyOverlay, setShowReadyOverlay] = useState(true);
   const [notificationState, setNotificationState] = useState("idle");
   const [pushMessage, setPushMessage] = useState("");
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [wasAutoBumped, setWasAutoBumped] = useState(false);
   const previousStatusRef = useRef("");
 
   useEffect(() => {
@@ -150,10 +152,52 @@ function StatusPage() {
     if (status === "notified" && previousStatusRef.current !== "notified") {
       setShowReadyOverlay(true);
       playReadyChime().catch(() => {});
+      setWasAutoBumped(false);
     }
 
     previousStatusRef.current = status;
   }, [entry?.status]);
+
+  useEffect(() => {
+    if (entry?.status !== "notified" || !entry?.notifiedAt || entry?.respondedAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const startMillis = toMillis(entry.notifiedAt);
+    const timeoutSeconds = entry.notifiedTimeoutSeconds || 30;
+    const endMillis = startMillis + timeoutSeconds * 1000;
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((endMillis - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+        handleAutoBump();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [entry?.status, entry?.notifiedAt, entry?.respondedAt, entry?.notifiedTimeoutSeconds]);
+
+  async function handleAutoBump() {
+    if (entry?.status !== "notified" || entry?.respondedAt) return;
+    
+    try {
+      await bumpDownQueueEntry(entry.id, queueEntries, 2, { 
+        status: "waiting",
+        notifiedAt: null,
+        notifiedTimeoutSeconds: null
+      });
+      setWasAutoBumped(true);
+      setShowReadyOverlay(false);
+    } catch (err) {
+      console.error("Auto bump failed:", err);
+    }
+  }
+
+
 
   async function enableNotifications() {
     if (!entryId) {
@@ -237,16 +281,12 @@ function StatusPage() {
               Your table is ready.
             </h1>
             <p className="mt-4 text-base leading-7 text-ink/75">
-              Please come to the front desk now. This alert stays on until you
-              dismiss it.
+              Please come to the front desk now. {timeLeft !== null ? (
+                <span className="block mt-2 font-bold text-emerald-700 animate-pulse">
+                  Head to the desk within {timeLeft} seconds to keep your spot!
+                </span>
+              ) : "This alert stays on until you are seated."}
             </p>
-            <button
-              type="button"
-              className="warm-button mt-8 w-full justify-center"
-              onClick={() => setShowReadyOverlay(false)}
-            >
-              I&apos;m coming
-            </button>
           </div>
         </div>
       ) : null}
@@ -288,6 +328,24 @@ function StatusPage() {
             <Link to="/join" className="warm-button mt-6">
               Join the queue again
             </Link>
+          </section>
+        ) : null}
+
+        {wasAutoBumped ? (
+          <section className="glass-panel p-6 animate-fadeSlide">
+            <div className="rounded-[1.5rem] border border-amber-500/20 bg-amber-500/10 px-5 py-4 text-amber-800">
+              <h3 className="font-bold text-lg">You missed your turn</h3>
+              <p className="mt-2">
+                Since you didn't respond within the time limit, your position has been moved back. 
+                Please keep this page open and head to the desk as soon as you are notified again.
+              </p>
+            </div>
+            <button 
+              className="warm-button mt-4"
+              onClick={() => setWasAutoBumped(false)}
+            >
+              Got it
+            </button>
           </section>
         ) : null}
 

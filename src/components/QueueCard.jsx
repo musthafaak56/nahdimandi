@@ -1,7 +1,32 @@
+import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
-import { formatClock, formatJoinedLabel } from "../lib/time";
+import { formatClock, formatJoinedLabel, toMillis } from "../lib/time";
 
 function QueueCard({ entry, position, busyAction, onAction }) {
+  const [timeLeft, setTimeLeft] = useState(null);
+
+  useEffect(() => {
+    if (entry.status !== "notified" || !entry.notifiedAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const startMillis = toMillis(entry.notifiedAt);
+    const timeoutSeconds = entry.notifiedTimeoutSeconds || 30;
+    const endMillis = startMillis + timeoutSeconds * 1000;
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((endMillis - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [entry.status, entry.notifiedAt, entry.notifiedTimeoutSeconds]);
+
   return (
     <article className="admin-panel animate-fadeSlide overflow-hidden p-5">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
@@ -20,6 +45,11 @@ function QueueCard({ entry, position, busyAction, onAction }) {
             <span>{entry.partySize} guests</span>
             <span>{formatJoinedLabel(entry.timestamp)}</span>
             <span>Joined at {formatClock(entry.timestamp)}</span>
+            {timeLeft !== null && (
+              <span className="font-bold text-amber-500">
+                Timer: {timeLeft}s
+              </span>
+            )}
           </div>
         </div>
 

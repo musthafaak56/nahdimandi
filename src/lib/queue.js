@@ -8,6 +8,7 @@ import {
   writeBatch,
   where,
   getDocs,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -84,16 +85,47 @@ export function subscribeToAdminQueue(onNext, onError) {
   );
 }
 
-export async function updateQueueStatus(entryId, status) {
-  const batch = writeBatch(db);
+export function subscribeToQueueSettings(onNext, onError) {
+  return onSnapshot(doc(db, "settings", "queue"), (snapshot) => {
+    if (snapshot.exists()) {
+      onNext(snapshot.data());
+    } else {
+      onNext({ notifiedTimeoutSeconds: 30 });
+    }
+  }, onError);
+}
 
-  batch.update(doc(db, "queue", entryId), { status });
-  batch.update(doc(db, "queue_public", entryId), { status });
+export async function updateQueueSettings(settings) {
+  await setDoc(doc(db, "settings", "queue"), settings, { merge: true });
+}
+
+export async function updateQueueStatus(entryId, status, options = {}) {
+  const batch = writeBatch(db);
+  const updates = { status };
+
+  if (status === "notified") {
+    updates.notifiedAt = serverTimestamp();
+    updates.notifiedTimeoutSeconds = options.notifiedTimeoutSeconds || 30;
+    updates.respondedAt = null;
+  }
+
+  batch.update(doc(db, "queue", entryId), updates);
+  batch.update(doc(db, "queue_public", entryId), updates);
 
   await batch.commit();
 }
 
-export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount) {
+export async function acknowledgeNotification(entryId) {
+  const batch = writeBatch(db);
+  const updates = { respondedAt: serverTimestamp() };
+
+  batch.update(doc(db, "queue", entryId), updates);
+  batch.update(doc(db, "queue_public", entryId), updates);
+
+  await batch.commit();
+}
+
+export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, extraUpdates = {}) {
   const currentIndex = currentEntries.findIndex((e) => e.id === entryId);
   if (currentIndex === -1) return;
 
@@ -112,8 +144,13 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount) {
     newTimestamp = serverTimestamp();
   }
 
-  batch.update(doc(db, "queue", entryId), { timestamp: newTimestamp });
-  batch.update(doc(db, "queue_public", entryId), { timestamp: newTimestamp });
+  const updates = { 
+    timestamp: newTimestamp,
+    ...extraUpdates 
+  };
+
+  batch.update(doc(db, "queue", entryId), updates);
+  batch.update(doc(db, "queue_public", entryId), updates);
 
   await batch.commit();
 }
