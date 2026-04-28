@@ -11,7 +11,7 @@ function CustomerCredits() {
           rel="noreferrer"
           className="font-semibold text-clove transition hover:text-ember"
         >
-          Musthafa Abdul Kadar
+          Musthafa Abdul Kadar.
         </a>
       </p>
     </footer>

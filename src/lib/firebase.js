@@ -66,8 +66,8 @@ export async function ensureAnonymousSession() {
 export function isPasswordUser(user) {
   return Boolean(
     user &&
-      !user.isAnonymous &&
-      user.providerData.some(({ providerId }) => providerId === "password")
+    !user.isAnonymous &&
+    user.providerData.some(({ providerId }) => providerId === "password"),
   );
 }
 
