@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import CustomerCredits from "../components/CustomerCredits";
 import LoadingScreen from "../components/LoadingScreen";
 import { getFriendlyError } from "../lib/errors";
 import { ensureAnonymousSession } from "../lib/firebase";
@@ -265,6 +266,8 @@ function JoinPage() {
           </form>
         </section>
       </div>
+
+      <CustomerCredits />
     </main>
   );
 }

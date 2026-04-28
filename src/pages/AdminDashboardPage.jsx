@@ -7,12 +7,15 @@ import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 import AdminHistoryView from "../components/AdminHistoryView";
 import { 
+  createQueueEntry,
   subscribeToAdminQueue, 
   updateQueueStatus, 
   bumpDownQueueEntry,
   subscribeToQueueSettings,
   updateQueueSettings
 } from "../lib/queue";
+
+const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 
 function AdminDashboardPage() {
   const { user } = useAuthState();
@@ -22,6 +25,16 @@ function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState("live");
   const [bumpDownCount, setBumpDownCount] = useState(3);
   const [notifiedTimeout, setNotifiedTimeout] = useState(30);
+  const [bumpDownDraft, setBumpDownDraft] = useState(3);
+  const [timeoutDraft, setTimeoutDraft] = useState(30);
+  const [adminForm, setAdminForm] = useState({
+    name: "",
+    phone: "",
+    partySize: 2,
+  });
+  const [isAddingParty, setIsAddingParty] = useState(false);
+  const [isSavingBumpDown, setIsSavingBumpDown] = useState(false);
+  const [isSavingTimeout, setIsSavingTimeout] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToAdminQueue(
@@ -41,7 +54,9 @@ function AdminDashboardPage() {
   useEffect(() => {
     const unsubscribe = subscribeToQueueSettings(
       (settings) => {
-        setNotifiedTimeout(settings.notifiedTimeoutSeconds || 30);
+        const nextTimeout = settings.notifiedTimeoutSeconds || 30;
+        setNotifiedTimeout(nextTimeout);
+        setTimeoutDraft(nextTimeout);
       },
       (settingsError) => {
         console.error("Failed to load settings:", settingsError);
@@ -51,12 +66,32 @@ function AdminDashboardPage() {
     return unsubscribe;
   }, []);
 
-  async function handleUpdateTimeout(newValue) {
-    setNotifiedTimeout(newValue);
+  async function handleSaveBumpDown() {
+    setError("");
+    setIsSavingBumpDown(true);
+
     try {
-      await updateQueueSettings({ notifiedTimeoutSeconds: newValue });
+      setBumpDownCount(Math.min(20, Math.max(1, Number(bumpDownDraft || 1))));
+    } catch (err) {
+      setError("Failed to save push-down setting.");
+    } finally {
+      setIsSavingBumpDown(false);
+    }
+  }
+
+  async function handleUpdateTimeout() {
+    const nextTimeout = Math.min(300, Math.max(10, Number(timeoutDraft || 10)));
+    setError("");
+    setIsSavingTimeout(true);
+
+    try {
+      await updateQueueSettings({ notifiedTimeoutSeconds: nextTimeout });
+      setNotifiedTimeout(nextTimeout);
+      setTimeoutDraft(nextTimeout);
     } catch (err) {
       setError("Failed to save timeout setting.");
+    } finally {
+      setIsSavingTimeout(false);
     }
   }
 
@@ -86,6 +121,61 @@ function AdminDashboardPage() {
 
   async function handleSignOut() {
     await signOut(auth);
+  }
+
+  function updateAdminForm(field, value) {
+    setAdminForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  async function handleAddParty(event) {
+    event.preventDefault();
+    setError("");
+
+    const trimmedName = adminForm.name.trim();
+    const trimmedPhone = adminForm.phone.trim();
+    const partySize = Number(adminForm.partySize);
+
+    if (trimmedName.length < 2) {
+      setError("Enter a guest name before adding the party.");
+      return;
+    }
+
+    if (!PHONE_PATTERN.test(trimmedPhone)) {
+      setError("Enter a valid phone number for the walk-in party.");
+      return;
+    }
+
+    if (!user?.uid) {
+      setError("Admin session is not ready yet. Try again in a moment.");
+      return;
+    }
+
+    setIsAddingParty(true);
+
+    try {
+      await createQueueEntry({
+        name: trimmedName,
+        phone: trimmedPhone,
+        partySize,
+        ownerUid: user.uid,
+        persistLocal: false,
+      });
+
+      setAdminForm({
+        name: "",
+        phone: "",
+        partySize: 2,
+      });
+    } catch (addError) {
+      setError(
+        getFriendlyError(addError, "The party could not be added to the queue.")
+      );
+    } finally {
+      setIsAddingParty(false);
+    }
   }
 
   const deferredEntries = useDeferredValue(entries);
@@ -156,43 +246,144 @@ function AdminDashboardPage() {
           <AdminHistoryView />
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <section className="grid gap-4 xl:grid-cols-[1.3fr_1fr_1fr]">
+              <form
+                className="admin-panel p-5 sm:p-6"
+                onSubmit={handleAddParty}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="font-admin text-sm font-semibold uppercase tracking-[0.28em] text-admin-cyan">
+                      Add walk-in
+                    </p>
+                    <h2 className="mt-2 font-admin text-2xl font-bold text-admin-text">
+                      Put a party straight into the queue
+                    </h2>
+                  </div>
+                  <button
+                    type="submit"
+                    className="admin-button bg-admin-cyan text-admin-base hover:bg-[#76d4f0] focus:ring-admin-cyan/20"
+                    disabled={isAddingParty}
+                  >
+                    {isAddingParty ? "Adding..." : "Add party"}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-[1.1fr_1fr_140px]">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-admin-mute">
+                      Guest name
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10"
+                      type="text"
+                      value={adminForm.name}
+                      onChange={(event) => updateAdminForm("name", event.target.value)}
+                      placeholder="Walk-in guest"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-admin-mute">
+                      Phone
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10"
+                      type="tel"
+                      value={adminForm.phone}
+                      onChange={(event) => updateAdminForm("phone", event.target.value)}
+                      placeholder="+91 9X XXX XXXXX"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-admin-mute">
+                      Party size
+                    </span>
+                    <input
+                      className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-center text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10"
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={adminForm.partySize}
+                      onChange={(event) =>
+                        updateAdminForm(
+                          "partySize",
+                          Math.min(20, Math.max(1, Number(event.target.value || 1)))
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+              </form>
+
               <SummaryBar
                 totalWaiting={waitingEntries.length}
                 totalPartySize={totalPartySize}
                 nextUp={nextUp}
               />
-              <div className="flex items-center gap-3 rounded-xl border border-admin-line/30 bg-admin-base/50 p-3 sm:px-4">
-                <label className="text-sm font-medium text-admin-mute">
-                  Push down no-shows by:
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={bumpDownCount}
-                  onChange={(e) => setBumpDownCount(Number(e.target.value))}
-                  className="w-16 rounded border border-admin-line/50 bg-admin-base py-1 px-2 text-center font-admin text-admin-text outline-none focus:border-amber-500"
-                />
-                <span className="text-sm text-admin-mute">parties</span>
-              </div>
 
-              <div className="flex items-center gap-3 rounded-xl border border-admin-line/30 bg-admin-base/50 p-3 sm:px-4">
-                <label className="text-sm font-medium text-admin-mute">
-                  Response timeout:
-                </label>
-                <input
-                  type="number"
-                  min="10"
-                  max="300"
-                  step="10"
-                  value={notifiedTimeout}
-                  onChange={(e) => handleUpdateTimeout(Number(e.target.value))}
-                  className="w-16 rounded border border-admin-line/50 bg-admin-base py-1 px-2 text-center font-admin text-admin-text outline-none focus:border-admin-cyan"
-                />
-                <span className="text-sm text-admin-mute">sec</span>
+              <div className="admin-panel flex flex-col gap-4 p-5 sm:p-6">
+                <div className="rounded-xl border border-admin-line/30 bg-admin-base/50 p-4">
+                  <label className="text-sm font-medium text-admin-mute">
+                    Push down no-shows by
+                  </label>
+                  <div className="mt-3 flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={bumpDownDraft}
+                      onChange={(e) =>
+                        setBumpDownDraft(
+                          Math.min(20, Math.max(1, Number(e.target.value || 1)))
+                        )
+                      }
+                      className="w-20 rounded border border-admin-line/50 bg-admin-base py-2 px-2 text-center font-admin text-admin-text outline-none focus:border-amber-500"
+                    />
+                    <span className="text-sm text-admin-mute">parties</span>
+                    <button
+                      type="button"
+                      className="admin-button bg-amber-500/15 px-3 py-2 text-xs text-amber-500 ring-1 ring-amber-500/30 hover:bg-amber-500/22 focus:ring-amber-500/20"
+                      onClick={handleSaveBumpDown}
+                      disabled={isSavingBumpDown}
+                    >
+                      {isSavingBumpDown ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-admin-line/30 bg-admin-base/50 p-4">
+                  <label className="text-sm font-medium text-admin-mute">
+                    Response timeout
+                  </label>
+                  <div className="mt-3 flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="10"
+                      max="300"
+                      step="10"
+                      value={timeoutDraft}
+                      onChange={(e) =>
+                        setTimeoutDraft(
+                          Math.min(300, Math.max(10, Number(e.target.value || 10)))
+                        )
+                      }
+                      className="w-20 rounded border border-admin-line/50 bg-admin-base py-2 px-2 text-center font-admin text-admin-text outline-none focus:border-admin-cyan"
+                    />
+                    <span className="text-sm text-admin-mute">sec</span>
+                    <button
+                      type="button"
+                      className="admin-button bg-admin-cyan/15 px-3 py-2 text-xs text-admin-cyan ring-1 ring-admin-cyan/30 hover:bg-admin-cyan/22 focus:ring-admin-cyan/20"
+                      onClick={handleUpdateTimeout}
+                      disabled={isSavingTimeout}
+                    >
+                      {isSavingTimeout ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
 
             {error ? (
               <div className="rounded-[1.5rem] border border-admin-rose/25 bg-admin-rose/10 px-5 py-4 text-sm text-admin-rose">

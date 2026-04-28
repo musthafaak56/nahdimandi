@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 import { formatClock, formatJoinedLabel, toMillis } from "../lib/time";
 
+function buildTelHref(phone) {
+  const normalizedPhone = String(phone || "").replace(/[^\d+]/g, "");
+  return normalizedPhone ? `tel:${normalizedPhone}` : null;
+}
+
 function QueueCard({ entry, position, busyAction, onAction }) {
   const [timeLeft, setTimeLeft] = useState(null);
+  const callHref = buildTelHref(entry.phone);
 
   useEffect(() => {
     if (entry.status !== "notified" || !entry.notifiedAt) {
@@ -54,6 +60,14 @@ function QueueCard({ entry, position, busyAction, onAction }) {
         </div>
 
         <div className="flex flex-wrap gap-3 md:max-w-sm md:justify-end">
+          {callHref ? (
+            <a
+              href={callHref}
+              className="admin-button bg-white/10 text-admin-text ring-1 ring-white/15 hover:bg-white/16 focus:ring-white/10"
+            >
+              Call
+            </a>
+          ) : null}
           <button
             type="button"
             className="admin-button bg-admin-mint/15 text-admin-mint ring-1 ring-admin-mint/30 hover:bg-admin-mint/22 focus:ring-admin-mint/30"

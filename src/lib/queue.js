@@ -22,7 +22,13 @@ function mapDocs(snapshot) {
   }));
 }
 
-export async function createQueueEntry({ name, phone, partySize, ownerUid }) {
+export async function createQueueEntry({
+  name,
+  phone,
+  partySize,
+  ownerUid,
+  persistLocal = true,
+}) {
   const queueRef = doc(collection(db, "queue"));
   const queuePublicRef = doc(db, "queue_public", queueRef.id);
   const batch = writeBatch(db);
@@ -46,7 +52,7 @@ export async function createQueueEntry({ name, phone, partySize, ownerUid }) {
 
   await batch.commit();
 
-  if (typeof window !== "undefined") {
+  if (persistLocal && typeof window !== "undefined") {
     window.localStorage.setItem(LAST_QUEUE_ENTRY_KEY, queueRef.id);
   }
 

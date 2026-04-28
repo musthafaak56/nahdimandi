@@ -5,13 +5,69 @@ import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 
 initializeApp();
 
-export const sendTableReadyNotification = onDocumentUpdated(
+const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
+
+function buildNotificationPayload(queueId, status) {
+  if (status === "seated") {
+    return {
+      logLabel: "Review request push notification sent.",
+      webpush: {
+        headers: {
+          Urgency: "normal",
+        },
+        notification: {
+          title: "Thanks for dining with us",
+          body: "Tap here to leave a quick Google review.",
+          requireInteraction: false,
+          tag: `queue-review-${queueId}`,
+          data: {
+            clickPath: GOOGLE_REVIEW_URL,
+          },
+        },
+      },
+      data: {
+        queueId,
+        status: "seated",
+        clickPath: GOOGLE_REVIEW_URL,
+      },
+    };
+  }
+
+  return {
+    logLabel: "Table-ready push notification sent.",
+    webpush: {
+      headers: {
+        Urgency: "high",
+      },
+      notification: {
+        title: "Your table is ready",
+        body: "Please come to the front desk.",
+        requireInteraction: true,
+        tag: `queue-${queueId}`,
+        data: {
+          clickPath: `/status?id=${queueId}`,
+        },
+      },
+    },
+    data: {
+      queueId,
+      status: "notified",
+      clickPath: `/status?id=${queueId}`,
+    },
+  };
+}
+
+export const sendQueueStatusNotification = onDocumentUpdated(
   "queue/{queueId}",
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
 
-    if (!after || before?.status === after.status || after.status !== "notified") {
+    if (
+      !after ||
+      before?.status === after.status ||
+      !["notified", "seated"].includes(after.status)
+    ) {
       return;
     }
 
@@ -23,34 +79,20 @@ export const sendTableReadyNotification = onDocumentUpdated(
     }
 
     try {
+      const payload = buildNotificationPayload(event.params.queueId, after.status);
+
       await getMessaging().send({
         token: after.fcmToken,
-        webpush: {
-          headers: {
-            Urgency: "high",
-          },
-          notification: {
-            title: "Your table is ready",
-            body: "Please come to the front desk.",
-            requireInteraction: true,
-            tag: `queue-${event.params.queueId}`,
-            data: {
-              clickPath: `/status?id=${event.params.queueId}`,
-            },
-          },
-        },
-        data: {
-          queueId: event.params.queueId,
-          status: "notified",
-          clickPath: `/status?id=${event.params.queueId}`,
-        },
+        webpush: payload.webpush,
+        data: payload.data,
       });
 
-      logger.info("Table-ready push notification sent.", {
+      logger.info(payload.logLabel, {
         queueId: event.params.queueId,
+        status: after.status,
       });
     } catch (error) {
-      logger.error("Failed to send FCM table-ready notification.", error);
+      logger.error("Failed to send FCM queue notification.", error);
     }
   }
 );
