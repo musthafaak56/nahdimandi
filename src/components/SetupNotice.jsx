@@ -1,4 +1,8 @@
-import { missingFirebaseConfig } from "../lib/firebase";
+import {
+  firebaseInitError,
+  firebaseInitSource,
+  missingFirebaseConfig,
+} from "../lib/firebase";
 
 function SetupNotice() {
   return (
@@ -11,9 +15,16 @@ function SetupNotice() {
           Add your database config before starting the queue app.
         </h1>
         <p className="mt-5 max-w-2xl text-base leading-7 text-ink/75">
-          Copy <code>.env.example</code> to <code>.env</code>, fill in the
-          required database project values, then start the dev server.
+          {firebaseInitSource === "missing"
+            ? "The app could not load Firebase config from this deployment. Add build-time env vars or deploy on Firebase Hosting with runtime config available at /__/firebase/init.json."
+            : "Copy .env.example to .env, fill in the required database project values, then start the dev server."}
         </p>
+
+        {firebaseInitError ? (
+          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+            Runtime config error: {firebaseInitError}
+          </div>
+        ) : null}
 
         <div className="mt-8 rounded-[1.75rem] border border-stone-900/10 bg-stone-950 p-6 text-sm text-stone-100">
           <p className="font-semibold text-stone-50">Missing variables</p>
