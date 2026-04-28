@@ -1,13 +1,18 @@
 import { startTransition, useEffect, useState } from "react";
+import { useAuthState } from "./AuthProvider";
 import { getFriendlyError } from "../lib/errors";
-import { getQueueHistoryByDate } from "../lib/queue";
+import { deleteQueueEntryPermanently, getQueueHistoryByDate } from "../lib/queue";
 import { formatClock, getRestaurantDateKey, getRestaurantHour } from "../lib/time";
 
+const SUPER_ADMIN_EMAIL = "musthafaak56@gmail.com";
+
 function AdminHistoryView() {
+  const { user } = useAuthState();
   const [date, setDate] = useState(() => getRestaurantDateKey());
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingEntryId, setDeletingEntryId] = useState("");
 
   useEffect(() => {
     let isActive = true;
@@ -60,6 +65,32 @@ function AdminHistoryView() {
     const ampm = hr >= 12 ? "PM" : "AM";
     const formattedHr = hr % 12 || 12;
     peakHour = `${formattedHr} ${ampm}`;
+  }
+
+  const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+
+  async function handleDelete(entry) {
+    const queueId = entry.queueId || entry.id;
+
+    if (!window.confirm(`Delete ${entry.name}'s history entry permanently?`)) {
+      return;
+    }
+
+    setDeletingEntryId(queueId);
+    setError("");
+
+    try {
+      await deleteQueueEntryPermanently(entry);
+      setHistory((current) =>
+        current.filter((item) => (item.queueId || item.id) !== queueId)
+      );
+    } catch (deleteError) {
+      setError(
+        getFriendlyError(deleteError, "Could not delete this history entry.")
+      );
+    } finally {
+      setDeletingEntryId("");
+    }
   }
 
   return (
@@ -131,6 +162,9 @@ function AdminHistoryView() {
                   <th className="px-6 py-4 font-semibold">Guest</th>
                   <th className="px-6 py-4 font-semibold">Party</th>
                   <th className="px-6 py-4 font-semibold">Status</th>
+                  {isSuperAdmin ? (
+                    <th className="px-6 py-4 font-semibold text-right">Delete</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-admin-line/20">
@@ -156,6 +190,20 @@ function AdminHistoryView() {
                         {entry.status}
                       </span>
                     </td>
+                    {isSuperAdmin ? (
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="admin-button bg-admin-rose/15 px-3 py-2 text-xs text-admin-rose ring-1 ring-admin-rose/30 hover:bg-admin-rose/22 focus:ring-admin-rose/20"
+                          onClick={() => handleDelete(entry)}
+                          disabled={deletingEntryId === (entry.queueId || entry.id)}
+                        >
+                          {deletingEntryId === (entry.queueId || entry.id)
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

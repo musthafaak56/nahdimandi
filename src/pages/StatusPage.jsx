@@ -11,8 +11,6 @@ import { formatClock, toMillis } from "../lib/time";
 import { bumpDownQueueEntry, ACTIVE_QUEUE_STATUSES, subscribeToQueueEntry, subscribeToActiveQueue } from "../lib/queue";
 
 const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
-const REVIEW_REDIRECT_DELAY_MS = 2200;
-const REVIEW_REDIRECT_KEY_PREFIX = "nahdi-mandi:review-redirected:";
 
 function StatusPage() {
   const location = useLocation();
@@ -23,6 +21,7 @@ function StatusPage() {
   const [error, setError] = useState("");
   const [isBooting, setIsBooting] = useState(true);
   const [showReadyOverlay, setShowReadyOverlay] = useState(true);
+  const [showReviewOverlay, setShowReviewOverlay] = useState(false);
   const [notificationState, setNotificationState] = useState("idle");
   const [pushMessage, setPushMessage] = useState("");
   const [timeLeft, setTimeLeft] = useState(null);
@@ -167,27 +166,12 @@ function StatusPage() {
       setWasAutoBumped(false);
     }
 
+    if (status === "seated" && previousStatusRef.current !== "seated") {
+      setShowReviewOverlay(true);
+    }
+
     previousStatusRef.current = status;
   }, [entry?.status]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !entryId || entry?.status !== "seated") {
-      return;
-    }
-
-    const redirectKey = `${REVIEW_REDIRECT_KEY_PREFIX}${entryId}`;
-
-    if (window.localStorage.getItem(redirectKey) === "done") {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      window.localStorage.setItem(redirectKey, "done");
-      window.location.assign(GOOGLE_REVIEW_URL);
-    }, REVIEW_REDIRECT_DELAY_MS);
-
-    return () => window.clearTimeout(timeout);
-  }, [entry?.status, entryId]);
 
   useEffect(() => {
     if (entry?.status !== "notified" || !entry?.notifiedAt || entry?.respondedAt) {
@@ -322,6 +306,42 @@ function StatusPage() {
         </div>
       ) : null}
 
+      {entry?.status === "seated" && showReviewOverlay ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 px-4 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-lg overflow-hidden border-2 border-sky-500/30 p-8 text-center">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-sky-500/15 text-3xl text-sky-700">
+              *
+            </div>
+            <p className="mt-5 text-sm font-semibold uppercase tracking-[0.28em] text-sky-700">
+              Thanks for dining with us
+            </p>
+            <h1 className="mt-3 font-display text-4xl text-ink">
+              Would you leave a quick review?
+            </h1>
+            <p className="mt-4 text-base leading-7 text-ink/75">
+              Your feedback helps other guests find us and helps the restaurant improve.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a
+                href={GOOGLE_REVIEW_URL}
+                className="warm-button w-full justify-center"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Leave a Google review
+              </a>
+              <button
+                type="button"
+                className="w-full rounded-full border border-stone-900/10 bg-white/75 px-5 py-3 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember"
+                onClick={() => setShowReviewOverlay(false)}
+              >
+                Maybe later
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
         <header className="glass-panel overflow-hidden p-6 sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -446,7 +466,7 @@ function StatusPage() {
                 </p>
                 <p className="mt-2 text-sm leading-6 text-ink/65">
                   {entry.status === "seated"
-                    ? "We're sending you to Google Maps so you can leave a quick review."
+                    ? "Tap below whenever you're ready to leave a quick Google review."
                     : notificationState === "unsupported"
                     ? "This browser cannot receive Firebase push notifications."
                     : notificationState === "denied"
@@ -483,7 +503,7 @@ function StatusPage() {
 
               {entry.status === "seated" ? (
                 <div className="mt-6 rounded-[1.5rem] border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-800">
-                  Redirecting to the Google review page in a moment.
+                  Thanks again. You can leave a review now or come back to it later.
                 </div>
               ) : pushMessage || location.state?.justJoined ? (
                 <div className="mt-6 rounded-[1.5rem] border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800">

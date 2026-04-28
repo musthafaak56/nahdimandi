@@ -166,9 +166,19 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, ext
   await batch.commit();
 }
 
+export async function deleteQueueEntryPermanently(entry) {
+  const queueId = entry.queueId || entry.id;
+  const batch = writeBatch(db);
+
+  batch.delete(doc(db, "queue", queueId));
+  batch.delete(doc(db, "queue_public", queueId));
+
+  await batch.commit();
+}
+
 export async function getQueueHistoryByDate(date) {
   const datedCollectionQuery = query(
-    collection(db, "queue_by_date", date, "entries"),
+    collection(db, "queue_by_date", date, "customers"),
     orderBy("timestamp", "asc")
   );
 
