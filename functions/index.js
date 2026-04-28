@@ -109,13 +109,41 @@ export const syncQueueEntryByDate = onDocumentWritten(
 
     if (before?.queueDate && (!after || after.queueDate !== before.queueDate)) {
       batch.delete(
-        adminDb.doc(`queue_by_date/${before.queueDate}/entries/${queueId}`)
+        adminDb.doc(`queue_by_date/${before.queueDate}/customers/${queueId}`)
       );
     }
 
     if (after?.queueDate) {
       batch.set(
-        adminDb.doc(`queue_by_date/${after.queueDate}/entries/${queueId}`),
+        adminDb.doc(`queue_by_date/${after.queueDate}/customers/${queueId}`),
+        {
+          ...after,
+          queueId,
+        }
+      );
+    }
+
+    await batch.commit();
+  }
+);
+
+export const syncPublicQueueEntryByDate = onDocumentWritten(
+  "queue_public/{queueId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const queueId = event.params.queueId;
+    const batch = adminDb.batch();
+
+    if (before?.queueDate && (!after || after.queueDate !== before.queueDate)) {
+      batch.delete(
+        adminDb.doc(`queue_public_by_date/${before.queueDate}/customers/${queueId}`)
+      );
+    }
+
+    if (after?.queueDate) {
+      batch.set(
+        adminDb.doc(`queue_public_by_date/${after.queueDate}/customers/${queueId}`),
         {
           ...after,
           queueId,

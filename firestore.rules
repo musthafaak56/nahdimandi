@@ -35,8 +35,13 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    match /queue_by_date/{dateKey}/entries/{entryId} {
+    match /queue_by_date/{dateKey}/customers/{entryId} {
       allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /queue_public_by_date/{dateKey}/customers/{entryId} {
+      allow read: if isAuthenticated();
       allow write: if false;
     }
   }
