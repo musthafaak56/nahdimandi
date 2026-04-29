@@ -24,6 +24,22 @@ function mapDocs(snapshot) {
   }));
 }
 
+function getQueueRef(queueId) {
+  return doc(db, "queue", queueId);
+}
+
+function getQueuePublicRef(queueId) {
+  return doc(db, "queue_public", queueId);
+}
+
+function getQueueByDateRef(queueDate, queueId) {
+  return doc(db, "queue_by_date", queueDate, "customers", queueId);
+}
+
+function getQueuePublicByDateRef(queueDate, queueId) {
+  return doc(db, "queue_public_by_date", queueDate, "customers", queueId);
+}
+
 export async function createQueueEntry({
   name,
   phone,
@@ -32,11 +48,9 @@ export async function createQueueEntry({
   persistLocal = true,
 }) {
   const queueRef = doc(collection(db, "queue"));
-  const queuePublicRef = doc(db, "queue_public", queueRef.id);
   const batch = writeBatch(db);
   const queueDate = getRestaurantDateKey();
-
-  batch.set(queueRef, {
+  const queueData = {
     name,
     phone,
     partySize,
@@ -46,13 +60,23 @@ export async function createQueueEntry({
     ownerUid,
     fcmToken: null,
     fcmTokenUpdatedAt: null,
-  });
-
-  batch.set(queuePublicRef, {
+  };
+  const queuePublicData = {
     partySize,
     queueDate,
     status: "waiting",
     timestamp: serverTimestamp(),
+  };
+
+  batch.set(queueRef, queueData);
+  batch.set(getQueuePublicRef(queueRef.id), queuePublicData);
+  batch.set(getQueueByDateRef(queueDate, queueRef.id), {
+    ...queueData,
+    queueId: queueRef.id,
+  });
+  batch.set(getQueuePublicByDateRef(queueDate, queueRef.id), {
+    ...queuePublicData,
+    queueId: queueRef.id,
   });
 
   await batch.commit();
@@ -113,6 +137,7 @@ export async function updateQueueSettings(settings) {
 export async function updateQueueStatus(entryId, status, options = {}) {
   const batch = writeBatch(db);
   const updates = { status };
+  const queueDate = options.queueDate || getRestaurantDateKey();
 
   if (status === "notified") {
     updates.notifiedAt = serverTimestamp();
@@ -120,25 +145,30 @@ export async function updateQueueStatus(entryId, status, options = {}) {
     updates.respondedAt = null;
   }
 
-  batch.update(doc(db, "queue", entryId), updates);
-  batch.update(doc(db, "queue_public", entryId), updates);
+  batch.update(getQueueRef(entryId), updates);
+  batch.update(getQueuePublicRef(entryId), updates);
+  batch.update(getQueueByDateRef(queueDate, entryId), updates);
+  batch.update(getQueuePublicByDateRef(queueDate, entryId), updates);
 
   await batch.commit();
 }
 
-export async function acknowledgeNotification(entryId) {
+export async function acknowledgeNotification(entryId, queueDate = getRestaurantDateKey()) {
   const batch = writeBatch(db);
   const updates = { respondedAt: serverTimestamp() };
 
-  batch.update(doc(db, "queue", entryId), updates);
-  batch.update(doc(db, "queue_public", entryId), updates);
+  batch.update(getQueueRef(entryId), updates);
+  batch.update(getQueuePublicRef(entryId), updates);
+  batch.update(getQueueByDateRef(queueDate, entryId), updates);
+  batch.update(getQueuePublicByDateRef(queueDate, entryId), updates);
 
   await batch.commit();
 }
 
 export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, extraUpdates = {}) {
-  const currentIndex = currentEntries.findIndex((e) => e.id === entryId);
-  if (currentIndex === -1) return;
+  const currentEntry = currentEntries.find((entry) => entry.id === entryId);
+  const currentIndex = currentEntries.findIndex((entry) => entry.id === entryId);
+  if (currentIndex === -1 || !currentEntry?.queueDate) return;
 
   const batch = writeBatch(db);
   const targetIndex = currentIndex + bumpCount;
@@ -160,8 +190,10 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, ext
     ...extraUpdates 
   };
 
-  batch.update(doc(db, "queue", entryId), updates);
-  batch.update(doc(db, "queue_public", entryId), updates);
+  batch.update(getQueueRef(entryId), updates);
+  batch.update(getQueuePublicRef(entryId), updates);
+  batch.update(getQueueByDateRef(currentEntry.queueDate, entryId), updates);
+  batch.update(getQueuePublicByDateRef(currentEntry.queueDate, entryId), updates);
 
   await batch.commit();
 }
@@ -169,9 +201,15 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, ext
 export async function deleteQueueEntryPermanently(entry) {
   const queueId = entry.queueId || entry.id;
   const batch = writeBatch(db);
+  const queueDate = entry.queueDate;
 
-  batch.delete(doc(db, "queue", queueId));
-  batch.delete(doc(db, "queue_public", queueId));
+  batch.delete(getQueueRef(queueId));
+  batch.delete(getQueuePublicRef(queueId));
+
+  if (queueDate) {
+    batch.delete(getQueueByDateRef(queueDate, queueId));
+    batch.delete(getQueuePublicByDateRef(queueDate, queueId));
+  }
 
   await batch.commit();
 }
