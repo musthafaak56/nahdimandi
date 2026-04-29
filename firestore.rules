@@ -16,8 +16,10 @@ service cloud.firestore {
     }
 
     match /queue/{entryId} {
-      // Admins can read all queue entries, users can only read their own
-      allow read: if isAdmin() || isOwner(resource.data);
+      // Any authenticated user can open a specific queue doc by ID for the status page.
+      allow get: if isAuthenticated();
+      // Only admins can list/query the private queue collection.
+      allow list: if isAdmin();
       // Anyone can join the queue as long as they correctly assign their own UID
       allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
       // Admins can update status, users can only update their push notification tokens
@@ -37,12 +39,14 @@ service cloud.firestore {
 
     match /queue_by_date/{dateKey}/customers/{entryId} {
       allow read: if isAdmin();
-      allow write: if false;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
     match /queue_public_by_date/{dateKey}/customers/{entryId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
   }
 }

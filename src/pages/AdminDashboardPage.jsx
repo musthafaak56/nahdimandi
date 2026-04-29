@@ -98,14 +98,20 @@ function AdminDashboardPage() {
   async function handleAction(entryId, status) {
     setBusyAction(`${entryId}:${status}`);
     setError("");
+    const currentEntry = deferredEntries.find((entry) => entry.id === entryId);
 
     try {
       if (status === "bumpDown") {
         await bumpDownQueueEntry(entryId, deferredEntries, bumpDownCount);
       } else if (status === "notified") {
-        await updateQueueStatus(entryId, status, { notifiedTimeoutSeconds: notifiedTimeout });
+        await updateQueueStatus(entryId, status, {
+          notifiedTimeoutSeconds: notifiedTimeout,
+          queueDate: currentEntry?.queueDate,
+        });
       } else {
-        await updateQueueStatus(entryId, status);
+        await updateQueueStatus(entryId, status, {
+          queueDate: currentEntry?.queueDate,
+        });
       }
     } catch (actionError) {
       setError(
