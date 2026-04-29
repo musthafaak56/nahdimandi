@@ -15,16 +15,11 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == resourceData.ownerUid;
     }
 
-    match /queue/{entryId} {
-      // Any authenticated user can open a specific queue doc by ID for the status page.
+    match /customers_per_day/{dateKey}/entries/{entryId} {
       allow get: if isAuthenticated();
-      // Only admins can list/query the private queue collection.
       allow list: if isAdmin();
-      // Anyone can join the queue as long as they correctly assign their own UID
       allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
-      // Admins can update status, users can only update their push notification tokens
       allow update: if isAdmin() || (isOwner(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken', 'fcmTokenUpdatedAt']));
-      // Only admins can delete queue entries
       allow delete: if isAdmin();
     }
 
@@ -37,16 +32,9 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    match /queue_by_date/{dateKey}/customers/{entryId} {
+    match /settings/{settingId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
-    }
-
-    match /queue_public_by_date/{dateKey}/customers/{entryId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+      allow write: if isAdmin();
     }
   }
 }

@@ -26,7 +26,7 @@ export async function canUsePushNotifications() {
   return isSupported().catch(() => false);
 }
 
-export async function requestQueueNotifications(queueId) {
+export async function requestQueueNotifications(queueId, queueDate) {
   const supported = await canUsePushNotifications();
 
   if (!supported) {
@@ -57,7 +57,11 @@ export async function requestQueueNotifications(queueId) {
     return { status: "missing-token" };
   }
 
-  await updateDoc(doc(db, "queue", queueId), {
+  if (!queueDate) {
+    throw new Error("queueDate is required to enable notifications.");
+  }
+
+  await updateDoc(doc(db, "customers_per_day", queueDate, "entries", queueId), {
     fcmToken: token,
     fcmTokenUpdatedAt: serverTimestamp(),
   });

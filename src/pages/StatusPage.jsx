@@ -16,6 +16,7 @@ function StatusPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const entryId = searchParams.get("id");
+  const queueDate = searchParams.get("date");
   const [entry, setEntry] = useState(null);
   const [queueEntries, setQueueEntries] = useState([]);
   const [error, setError] = useState("");
@@ -41,7 +42,7 @@ function StatusPage() {
   }, []);
 
   useEffect(() => {
-    if (!entryId) {
+    if (!entryId || !queueDate) {
       setError("Missing queue reference.");
       setIsBooting(false);
       return;
@@ -58,6 +59,7 @@ function StatusPage() {
         }
 
         unsubscribeEntry = subscribeToQueueEntry(
+          queueDate,
           entryId,
           (snapshot) => {
             if (!snapshot.exists()) {
@@ -122,7 +124,7 @@ function StatusPage() {
       unsubscribeEntry();
       unsubscribeQueue();
     };
-  }, [entryId]);
+  }, [entryId, queueDate]);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -130,10 +132,11 @@ function StatusPage() {
 
     subscribeToForegroundMessages((payload) => {
       const queueId = payload?.data?.queueId;
+      const messageQueueDate = payload?.data?.queueDate;
       const status = payload?.data?.status;
       const title = payload?.notification?.title;
 
-      if (queueId === entryId) {
+      if (queueId === entryId && (!messageQueueDate || messageQueueDate === queueDate)) {
         if (status === "seated") {
           setPushMessage(title || "Thanks for dining with us. Please leave a review.");
           return;
@@ -151,7 +154,7 @@ function StatusPage() {
       isActive = false;
       unsubscribe();
     };
-  }, [entryId]);
+  }, [entryId, queueDate]);
 
   useEffect(() => {
     const status = entry?.status;
@@ -215,14 +218,14 @@ function StatusPage() {
 
 
   async function enableNotifications() {
-    if (!entryId) {
+    if (!entryId || !queueDate) {
       return;
     }
 
     setNotificationState("requesting");
 
     try {
-      const result = await requestQueueNotifications(entryId);
+      const result = await requestQueueNotifications(entryId, queueDate);
       setNotificationState(result.status);
     } catch (notificationError) {
       setNotificationState("error");
