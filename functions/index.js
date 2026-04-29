@@ -7,7 +7,7 @@ initializeApp();
 
 const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
 
-function buildNotificationPayload(queueId, status) {
+function buildNotificationPayload(queueId, queueDate, status) {
   if (status === "seated") {
     return {
       logLabel: "Review request push notification sent.",
@@ -27,6 +27,7 @@ function buildNotificationPayload(queueId, status) {
       },
       data: {
         queueId,
+        queueDate,
         status: "seated",
         clickPath: GOOGLE_REVIEW_URL,
       },
@@ -39,26 +40,27 @@ function buildNotificationPayload(queueId, status) {
       headers: {
         Urgency: "high",
       },
-      notification: {
-        title: "Your table is ready",
-        body: "Please come to the front desk.",
-        requireInteraction: true,
-        tag: `queue-${queueId}`,
-        data: {
-          clickPath: `/status?id=${queueId}`,
+        notification: {
+          title: "Your table is ready",
+          body: "Please come to the front desk.",
+          requireInteraction: true,
+          tag: `queue-${queueId}`,
+          data: {
+            clickPath: `/status?id=${queueId}&date=${queueDate}`,
+          },
         },
       },
-    },
-    data: {
-      queueId,
-      status: "notified",
-      clickPath: `/status?id=${queueId}`,
-    },
+      data: {
+        queueId,
+        queueDate,
+        status: "notified",
+        clickPath: `/status?id=${queueId}&date=${queueDate}`,
+      },
   };
 }
 
 export const sendQueueStatusNotification = onDocumentUpdated(
-  "queue/{queueId}",
+  "customers_per_day/{dateKey}/entries/{queueId}",
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
@@ -79,7 +81,11 @@ export const sendQueueStatusNotification = onDocumentUpdated(
     }
 
     try {
-      const payload = buildNotificationPayload(event.params.queueId, after.status);
+      const payload = buildNotificationPayload(
+        event.params.queueId,
+        event.params.dateKey,
+        after.status
+      );
 
       await getMessaging().send({
         token: after.fcmToken,

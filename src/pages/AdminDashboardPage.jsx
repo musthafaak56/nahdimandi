@@ -41,6 +41,7 @@ function AdminDashboardPage() {
       (nextEntries) => {
         startTransition(() => {
           setEntries(nextEntries);
+          setError("");
         });
       },
       (queueError) => {

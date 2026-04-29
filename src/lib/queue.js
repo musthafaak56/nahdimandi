@@ -1,18 +1,17 @@
 import {
   collection,
   doc,
-  documentId,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  writeBatch,
-  where,
-  getDocs,
   setDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { getRestaurantDateKey, getRestaurantDateRange } from "./time";
+import { getRestaurantDateKey } from "./time";
 
 export const ACTIVE_QUEUE_STATUSES = ["waiting", "notified"];
 export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
@@ -24,20 +23,12 @@ function mapDocs(snapshot) {
   }));
 }
 
-function getQueueRef(queueId) {
-  return doc(db, "queue", queueId);
+function getCustomerEntryRef(queueDate, queueId) {
+  return doc(db, "customers_per_day", queueDate, "entries", queueId);
 }
 
 function getQueuePublicRef(queueId) {
   return doc(db, "queue_public", queueId);
-}
-
-function getQueueByDateRef(queueDate, queueId) {
-  return doc(db, "queue_by_date", queueDate, "customers", queueId);
-}
-
-function getQueuePublicByDateRef(queueDate, queueId) {
-  return doc(db, "queue_public_by_date", queueDate, "customers", queueId);
 }
 
 export async function createQueueEntry({
@@ -47,9 +38,9 @@ export async function createQueueEntry({
   ownerUid,
   persistLocal = true,
 }) {
-  const queueRef = doc(collection(db, "queue"));
-  const batch = writeBatch(db);
   const queueDate = getRestaurantDateKey();
+  const queueRef = doc(collection(db, "customers_per_day", queueDate, "entries"));
+  const batch = writeBatch(db);
   const queueData = {
     name,
     phone,
@@ -70,26 +61,20 @@ export async function createQueueEntry({
 
   batch.set(queueRef, queueData);
   batch.set(getQueuePublicRef(queueRef.id), queuePublicData);
-  batch.set(getQueueByDateRef(queueDate, queueRef.id), {
-    ...queueData,
-    queueId: queueRef.id,
-  });
-  batch.set(getQueuePublicByDateRef(queueDate, queueRef.id), {
-    ...queuePublicData,
-    queueId: queueRef.id,
-  });
-
   await batch.commit();
 
   if (persistLocal && typeof window !== "undefined") {
-    window.localStorage.setItem(LAST_QUEUE_ENTRY_KEY, queueRef.id);
+    window.localStorage.setItem(
+      LAST_QUEUE_ENTRY_KEY,
+      JSON.stringify({ id: queueRef.id, queueDate })
+    );
   }
 
-  return queueRef.id;
+  return { id: queueRef.id, queueDate };
 }
 
-export function subscribeToQueueEntry(entryId, onNext, onError) {
-  return onSnapshot(doc(db, "queue", entryId), onNext, onError);
+export function subscribeToQueueEntry(queueDate, entryId, onNext, onError) {
+  return onSnapshot(getCustomerEntryRef(queueDate, entryId), onNext, onError);
 }
 
 export function subscribeToActiveQueue(onNext, onError) {
@@ -107,27 +92,36 @@ export function subscribeToActiveQueue(onNext, onError) {
 }
 
 export function subscribeToAdminQueue(onNext, onError) {
+  const todayKey = getRestaurantDateKey();
   const adminQueueQuery = query(
-    collection(db, "queue"),
-    where("status", "in", ACTIVE_QUEUE_STATUSES),
+    collection(db, "customers_per_day", todayKey, "entries"),
     orderBy("timestamp", "asc")
   );
 
   return onSnapshot(
     adminQueueQuery,
-    (snapshot) => onNext(mapDocs(snapshot)),
+    (snapshot) =>
+      onNext(
+        mapDocs(snapshot).filter((entry) =>
+          ACTIVE_QUEUE_STATUSES.includes(entry.status)
+        )
+      ),
     onError
   );
 }
 
 export function subscribeToQueueSettings(onNext, onError) {
-  return onSnapshot(doc(db, "settings", "queue"), (snapshot) => {
-    if (snapshot.exists()) {
-      onNext(snapshot.data());
-    } else {
-      onNext({ notifiedTimeoutSeconds: 30 });
-    }
-  }, onError);
+  return onSnapshot(
+    doc(db, "settings", "queue"),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onNext(snapshot.data());
+      } else {
+        onNext({ notifiedTimeoutSeconds: 30 });
+      }
+    },
+    onError
+  );
 }
 
 export async function updateQueueSettings(settings) {
@@ -135,9 +129,14 @@ export async function updateQueueSettings(settings) {
 }
 
 export async function updateQueueStatus(entryId, status, options = {}) {
+  const queueDate = options.queueDate;
+
+  if (!queueDate) {
+    throw new Error("queueDate is required to update queue status.");
+  }
+
   const batch = writeBatch(db);
   const updates = { status };
-  const queueDate = options.queueDate || getRestaurantDateKey();
 
   if (status === "notified") {
     updates.notifiedAt = serverTimestamp();
@@ -145,34 +144,44 @@ export async function updateQueueStatus(entryId, status, options = {}) {
     updates.respondedAt = null;
   }
 
-  batch.update(getQueueRef(entryId), updates);
-  batch.update(getQueuePublicRef(entryId), updates);
-  batch.update(getQueueByDateRef(queueDate, entryId), updates);
-  batch.update(getQueuePublicByDateRef(queueDate, entryId), updates);
+  if (status === "seated" || status === "cancelled") {
+    updates.respondedAt = serverTimestamp();
+  }
 
+  batch.update(getCustomerEntryRef(queueDate, entryId), updates);
+  batch.update(getQueuePublicRef(entryId), updates);
   await batch.commit();
 }
 
-export async function acknowledgeNotification(entryId, queueDate = getRestaurantDateKey()) {
-  const batch = writeBatch(db);
+export async function acknowledgeNotification(entryId, queueDate) {
+  if (!queueDate) {
+    throw new Error("queueDate is required to acknowledge notifications.");
+  }
+
   const updates = { respondedAt: serverTimestamp() };
+  const batch = writeBatch(db);
 
-  batch.update(getQueueRef(entryId), updates);
+  batch.update(getCustomerEntryRef(queueDate, entryId), updates);
   batch.update(getQueuePublicRef(entryId), updates);
-  batch.update(getQueueByDateRef(queueDate, entryId), updates);
-  batch.update(getQueuePublicByDateRef(queueDate, entryId), updates);
-
   await batch.commit();
 }
 
-export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, extraUpdates = {}) {
+export async function bumpDownQueueEntry(
+  entryId,
+  currentEntries,
+  bumpCount,
+  extraUpdates = {}
+) {
   const currentEntry = currentEntries.find((entry) => entry.id === entryId);
   const currentIndex = currentEntries.findIndex((entry) => entry.id === entryId);
-  if (currentIndex === -1 || !currentEntry?.queueDate) return;
+
+  if (currentIndex === -1 || !currentEntry?.queueDate) {
+    return;
+  }
 
   const batch = writeBatch(db);
   const targetIndex = currentIndex + bumpCount;
-  
+
   let newTimestamp;
   if (targetIndex < currentEntries.length) {
     const targetEntry = currentEntries[targetIndex];
@@ -185,109 +194,35 @@ export async function bumpDownQueueEntry(entryId, currentEntries, bumpCount, ext
     newTimestamp = serverTimestamp();
   }
 
-  const updates = { 
+  const updates = {
     timestamp: newTimestamp,
-    ...extraUpdates 
+    ...extraUpdates,
   };
 
-  batch.update(getQueueRef(entryId), updates);
+  batch.update(getCustomerEntryRef(currentEntry.queueDate, entryId), updates);
   batch.update(getQueuePublicRef(entryId), updates);
-  batch.update(getQueueByDateRef(currentEntry.queueDate, entryId), updates);
-  batch.update(getQueuePublicByDateRef(currentEntry.queueDate, entryId), updates);
-
   await batch.commit();
 }
 
 export async function deleteQueueEntryPermanently(entry) {
   const queueId = entry.queueId || entry.id;
-  const batch = writeBatch(db);
   const queueDate = entry.queueDate;
-
-  batch.delete(getQueueRef(queueId));
-  batch.delete(getQueuePublicRef(queueId));
+  const batch = writeBatch(db);
 
   if (queueDate) {
-    batch.delete(getQueueByDateRef(queueDate, queueId));
-    batch.delete(getQueuePublicByDateRef(queueDate, queueId));
+    batch.delete(getCustomerEntryRef(queueDate, queueId));
   }
+  batch.delete(getQueuePublicRef(queueId));
 
   await batch.commit();
 }
 
 export async function getQueueHistoryByDate(date) {
   const datedCollectionQuery = query(
-    collection(db, "queue_by_date", date, "customers"),
+    collection(db, "customers_per_day", date, "entries"),
     orderBy("timestamp", "asc")
   );
 
   const datedCollectionSnapshot = await getDocs(datedCollectionQuery);
-  const datedCollectionEntries = mapDocs(datedCollectionSnapshot);
-  const existingIds = new Set(datedCollectionEntries.map((entry) => entry.queueId || entry.id));
-
-  const datedQuery = query(
-    collection(db, "queue"),
-    where("queueDate", "==", date),
-    orderBy("timestamp", "asc")
-  );
-
-  const datedSnapshot = await getDocs(datedQuery);
-  const datedEntries = mapDocs(datedSnapshot).filter((entry) => {
-    if (existingIds.has(entry.id)) {
-      return false;
-    }
-
-    existingIds.add(entry.id);
-    return true;
-  });
-
-  const { start, end } = getRestaurantDateRange(date);
-
-  const legacyQuery = query(
-    collection(db, "queue"),
-    where("timestamp", ">=", start),
-    where("timestamp", "<=", end),
-    orderBy("timestamp", "asc")
-  );
-
-  const legacySnapshot = await getDocs(legacyQuery);
-  const missingLegacyIds = legacySnapshot.docs
-    .map((document) => document.id)
-    .filter((id) => !existingIds.has(id));
-
-  if (missingLegacyIds.length === 0) {
-    return [...datedCollectionEntries, ...datedEntries].sort((left, right) => {
-      const leftMillis = typeof left.timestamp?.toMillis === "function" ? left.timestamp.toMillis() : 0;
-      const rightMillis = typeof right.timestamp?.toMillis === "function" ? right.timestamp.toMillis() : 0;
-      return leftMillis - rightMillis;
-    });
-  }
-
-  const legacyBatches = [];
-
-  for (let index = 0; index < missingLegacyIds.length; index += 10) {
-    legacyBatches.push(missingLegacyIds.slice(index, index + 10));
-  }
-
-  const legacyResults = await Promise.all(
-    legacyBatches.map((ids) =>
-      getDocs(
-        query(
-          collection(db, "queue"),
-          where(documentId(), "in", ids)
-        )
-      )
-    )
-  );
-
-  const mergedEntries = [
-    ...datedCollectionEntries,
-    ...datedEntries,
-    ...legacyResults.flatMap((snapshot) => mapDocs(snapshot)),
-  ];
-
-  return mergedEntries.sort((left, right) => {
-    const leftMillis = typeof left.timestamp?.toMillis === "function" ? left.timestamp.toMillis() : 0;
-    const rightMillis = typeof right.timestamp?.toMillis === "function" ? right.timestamp.toMillis() : 0;
-    return leftMillis - rightMillis;
-  });
+  return mapDocs(datedCollectionSnapshot);
 }

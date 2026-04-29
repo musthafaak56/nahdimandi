@@ -11,7 +11,7 @@ const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 function JoinPage() {
   const navigate = useNavigate();
   const [ownerUid, setOwnerUid] = useState("");
-  const [resumeQueueId, setResumeQueueId] = useState("");
+  const [resumeQueueEntry, setResumeQueueEntry] = useState(null);
   const [error, setError] = useState("");
   const [isBooting, setIsBooting] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,7 +31,19 @@ function JoinPage() {
         }
 
         setOwnerUid(user.uid);
-        setResumeQueueId(window.localStorage.getItem(LAST_QUEUE_ENTRY_KEY) || "");
+        const storedEntry = window.localStorage.getItem(LAST_QUEUE_ENTRY_KEY);
+
+        if (!storedEntry) {
+          setResumeQueueEntry(null);
+          return;
+        }
+
+        try {
+          const parsedEntry = JSON.parse(storedEntry);
+          setResumeQueueEntry(parsedEntry?.id && parsedEntry?.queueDate ? parsedEntry : null);
+        } catch {
+          setResumeQueueEntry(null);
+        }
       })
       .catch((sessionError) => {
         if (!active) {
@@ -88,14 +100,14 @@ function JoinPage() {
     setIsSubmitting(true);
 
     try {
-      const entryId = await createQueueEntry({
+      const entry = await createQueueEntry({
         name: trimmedName,
         phone: trimmedPhone,
         partySize: Number(form.partySize),
         ownerUid,
       });
 
-      navigate(`/status?id=${entryId}`, {
+      navigate(`/status?id=${entry.id}&date=${entry.queueDate}`, {
         replace: true,
         state: { justJoined: true },
       });
@@ -171,9 +183,9 @@ function JoinPage() {
                 Add your party in under a minute.
               </h2>
             </div>
-            {resumeQueueId ? (
+            {resumeQueueEntry ? (
               <Link
-                to={`/status?id=${resumeQueueId}`}
+                to={`/status?id=${resumeQueueEntry.id}&date=${resumeQueueEntry.queueDate}`}
                 className="rounded-full border border-stone-900/10 bg-white/70 px-4 py-2 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember"
               >
                 Resume status
