@@ -34,6 +34,32 @@ function buildNotificationPayload(queueId, queueDate, status) {
     };
   }
 
+  if (status === "waiting") {
+    return {
+      logLabel: "Bump-down push notification sent.",
+      webpush: {
+        headers: {
+          Urgency: "high",
+        },
+        notification: {
+          title: "You missed your turn",
+          body: "You didn't attend the call. Please wait for your turn.",
+          requireInteraction: true,
+          tag: `queue-bump-${queueId}`,
+          data: {
+            clickPath: `/status?id=${queueId}&date=${queueDate}`,
+          },
+        },
+      },
+      data: {
+        queueId,
+        queueDate,
+        status: "waiting",
+        clickPath: `/status?id=${queueId}&date=${queueDate}`,
+      },
+    };
+  }
+
   return {
     logLabel: "Table-ready push notification sent.",
     webpush: {
@@ -68,7 +94,8 @@ export const sendQueueStatusNotification = onDocumentUpdated(
     if (
       !after ||
       before?.status === after.status ||
-      !["notified", "seated"].includes(after.status)
+      (!["notified", "seated"].includes(after.status) &&
+        !(before?.status === "notified" && after.status === "waiting"))
     ) {
       return;
     }

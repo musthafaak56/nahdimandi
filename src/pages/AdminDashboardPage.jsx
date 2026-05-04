@@ -149,7 +149,11 @@ function AdminDashboardPage() {
 
     try {
       if (status === "bumpDown") {
-        await bumpDownQueueEntry(entryId, deferredEntries, bumpDownCount);
+        await bumpDownQueueEntry(entryId, deferredEntries, bumpDownCount, {
+          status: "waiting",
+          notifiedAt: null,
+          notifiedTimeoutSeconds: null,
+        });
       } else if (status === "notified") {
         await updateQueueStatus(entryId, status, {
           notifiedTimeoutSeconds: notifiedTimeout,
