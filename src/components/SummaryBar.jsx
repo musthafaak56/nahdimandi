@@ -11,7 +11,7 @@ function SummaryStat({ label, value, tone }) {
 
 function SummaryBar({ totalWaiting, totalPartySize, nextUp }) {
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid gap-4 sm:grid-cols-2">
       <SummaryStat
         label="Waiting parties"
         value={String(totalWaiting).padStart(2, "0")}
@@ -22,11 +22,13 @@ function SummaryBar({ totalWaiting, totalPartySize, nextUp }) {
         value={String(totalPartySize).padStart(2, "0")}
         tone="text-admin-cyan"
       />
-      <SummaryStat
-        label="Next up"
-        value={nextUp ? `${nextUp.name} · ${nextUp.partySize}` : "No queue"}
-        tone="text-admin-amber"
-      />
+      <div className="sm:col-span-2">
+        <SummaryStat
+          label="Next up"
+          value={nextUp ? `${nextUp.name} · ${nextUp.partySize}` : "No queue"}
+          tone="text-admin-amber"
+        />
+      </div>
     </section>
   );
 }
