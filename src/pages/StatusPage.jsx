@@ -141,6 +141,10 @@ function StatusPage() {
           setPushMessage(title || "Thanks for dining with us. Please leave a review.");
           return;
         }
+        if (status === "waiting") {
+          setPushMessage(title || "You didn't attend the call. Please wait a bit more.");
+          return;
+        }
 
         setPushMessage(title || "Your table is ready.");
       }
