@@ -17,6 +17,52 @@ import {
 
 const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value || min)));
+}
+
+function NumberStepper({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  inputClassName = "",
+  buttonClassName = "",
+}) {
+  const currentValue = clampNumber(value, min, max);
+
+  return (
+    <div className="flex items-center overflow-hidden rounded-2xl border border-admin-line bg-admin-base/70">
+      <button
+        type="button"
+        className={`flex h-12 w-11 items-center justify-center border-r border-admin-line/70 text-lg font-semibold transition hover:bg-admin-line/20 focus:outline-none focus:ring-4 focus:ring-admin-cyan/10 ${buttonClassName}`}
+        onClick={() => onChange(clampNumber(currentValue - step, min, max))}
+        aria-label="Decrease value"
+      >
+        -
+      </button>
+      <input
+        className={`h-12 min-w-0 flex-1 border-0 bg-transparent px-2 text-center text-base text-admin-text outline-none ${inputClassName}`}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(clampNumber(event.target.value, min, max))}
+      />
+      <button
+        type="button"
+        className={`flex h-12 w-11 items-center justify-center border-l border-admin-line/70 text-lg font-semibold transition hover:bg-admin-line/20 focus:outline-none focus:ring-4 focus:ring-admin-cyan/10 ${buttonClassName}`}
+        onClick={() => onChange(clampNumber(currentValue + step, min, max))}
+        aria-label="Increase value"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 function AdminDashboardPage() {
   const { user } = useAuthState();
   const [entries, setEntries] = useState([]);
@@ -307,18 +353,11 @@ function AdminDashboardPage() {
                     <span className="mb-2 block text-sm font-medium text-admin-mute">
                       Party size
                     </span>
-                    <input
-                      className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-center text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10"
-                      type="number"
-                      min="1"
-                      max="20"
+                    <NumberStepper
                       value={adminForm.partySize}
-                      onChange={(event) =>
-                        updateAdminForm(
-                          "partySize",
-                          Math.min(20, Math.max(1, Number(event.target.value || 1)))
-                        )
-                      }
+                      min={1}
+                      max={20}
+                      onChange={(nextValue) => updateAdminForm("partySize", nextValue)}
                     />
                   </label>
                 </div>
@@ -336,17 +375,13 @@ function AdminDashboardPage() {
                     Push down no-shows by
                   </label>
                   <div className="mt-3 flex items-center gap-3">
-                    <input
-                      type="number"
-                      min="1"
-                      max="20"
+                    <NumberStepper
                       value={bumpDownDraft}
-                      onChange={(e) =>
-                        setBumpDownDraft(
-                          Math.min(20, Math.max(1, Number(e.target.value || 1)))
-                        )
-                      }
-                      className="w-20 rounded border border-admin-line/50 bg-admin-base py-2 px-2 text-center font-admin text-admin-text outline-none focus:border-amber-500"
+                      min={1}
+                      max={20}
+                      onChange={setBumpDownDraft}
+                      inputClassName="font-admin"
+                      buttonClassName="text-amber-500"
                     />
                     <span className="text-sm text-admin-mute">parties</span>
                     <button
@@ -365,18 +400,14 @@ function AdminDashboardPage() {
                     Response timeout
                   </label>
                   <div className="mt-3 flex items-center gap-3">
-                    <input
-                      type="number"
-                      min="10"
-                      max="300"
-                      step="10"
+                    <NumberStepper
                       value={timeoutDraft}
-                      onChange={(e) =>
-                        setTimeoutDraft(
-                          Math.min(300, Math.max(10, Number(e.target.value || 10)))
-                        )
-                      }
-                      className="w-20 rounded border border-admin-line/50 bg-admin-base py-2 px-2 text-center font-admin text-admin-text outline-none focus:border-admin-cyan"
+                      min={10}
+                      max={300}
+                      step={10}
+                      onChange={setTimeoutDraft}
+                      inputClassName="font-admin"
+                      buttonClassName="text-admin-cyan"
                     />
                     <span className="text-sm text-admin-mute">sec</span>
                     <button
