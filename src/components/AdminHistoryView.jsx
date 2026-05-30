@@ -2,6 +2,7 @@ import { startTransition, useEffect, useState } from "react";
 import { useAuthState } from "./AuthProvider";
 import { getFriendlyError } from "../lib/errors";
 import { deleteQueueEntryPermanently, getQueueHistoryByDate } from "../lib/queue";
+import { formatDistanceMeters } from "../lib/geofence";
 import { formatClock, getRestaurantDateKey, getRestaurantHour } from "../lib/time";
 
 const SUPER_ADMIN_EMAIL = "musthafaak56@gmail.com";
@@ -68,6 +69,25 @@ function AdminHistoryView() {
   }
 
   const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+
+  function buildLocationCell(location, storeName, fallback) {
+    if (!location) {
+      return <span className="text-admin-mute/70">{fallback}</span>;
+    }
+
+    return (
+      <span
+        className={
+          location.withinRadius
+            ? "font-semibold text-admin-mint"
+            : "font-semibold text-amber-500"
+        }
+      >
+        {formatDistanceMeters(location.distanceMeters)} from {storeName || "the store"} (
+        {location.withinRadius ? "inside" : "outside"} 2.5 km)
+      </span>
+    );
+  }
 
   async function handleDelete(entry) {
     const queueId = entry.queueId || entry.id;
@@ -161,6 +181,8 @@ function AdminHistoryView() {
                   <th className="px-6 py-4 font-semibold">Time</th>
                   <th className="px-6 py-4 font-semibold">Guest</th>
                   <th className="px-6 py-4 font-semibold">Party</th>
+                  <th className="px-6 py-4 font-semibold">Join Location</th>
+                  <th className="px-6 py-4 font-semibold">Table Ready Location</th>
                   <th className="px-6 py-4 font-semibold">Status</th>
                   {isSuperAdmin ? (
                     <th className="px-6 py-4 font-semibold text-right">Delete</th>
@@ -177,6 +199,26 @@ function AdminHistoryView() {
                       {entry.name}
                     </td>
                     <td className="px-6 py-4">{entry.partySize}</td>
+                    <td className="px-6 py-4">
+                      {entry.joinSource === "admin"
+                        ? "Added by admin at the desk"
+                        : buildLocationCell(
+                            entry.location,
+                            entry.storeName,
+                            "No join location"
+                          )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {entry.tableReadyLocation
+                        ? buildLocationCell(
+                            entry.tableReadyLocation,
+                            entry.storeName,
+                            "No table-ready location"
+                          )
+                        : entry.status === "notified"
+                          ? "Awaiting live location check"
+                          : "Not checked yet"}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider ${

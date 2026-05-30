@@ -142,6 +142,8 @@ function JoinPage() {
     }));
   }
 
+  const hasLocationAccess = locationPermission === "granted";
+
   async function handleRequestLocationAccess() {
     setError("");
     setIsCheckingLocation(true);
@@ -182,8 +184,8 @@ function JoinPage() {
       return;
     }
 
-    if (locationPermission === "denied") {
-      setError("Location access is required to join the public queue near the store.");
+    if (!hasLocationAccess) {
+      setError("Please allow location access in the browser before joining the queue.");
       return;
     }
 
@@ -320,6 +322,33 @@ function JoinPage() {
           </div>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            <div className="rounded-[1.5rem] border border-amber-500/20 bg-amber-500/10 p-4">
+              <p className="text-sm font-semibold text-amber-900">Step 1 of 2: allow location access</p>
+              <p className="mt-1 text-sm leading-6 text-amber-900/75">
+                Tap the browser prompt below so we can verify you are within 2.5 km
+                of {activeStoreLocation.name}. This is required before joining the queue.
+              </p>
+              <button
+                type="button"
+                className="mt-4 rounded-full border border-stone-900/10 bg-white/90 px-4 py-2 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleRequestLocationAccess}
+                disabled={isCheckingLocation || hasLocationAccess}
+              >
+                {isCheckingLocation
+                  ? "Checking location..."
+                  : hasLocationAccess
+                    ? "Location access granted"
+                    : "Allow location access"}
+              </button>
+              {!hasLocationAccess && locationPermission === "denied" ? (
+                <p className="mt-3 text-sm font-semibold text-rose-700">
+                  If the browser does not show a prompt, location access is already
+                  blocked for this site. Re-enable it from the browser’s site settings,
+                  then tap the button again.
+                </p>
+              ) : null}
+            </div>
+
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-ink/80">
                 Guest name
@@ -392,28 +421,6 @@ function JoinPage() {
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-stone-900/10 bg-white/55 p-4">
-              <p className="text-sm font-semibold text-ink/80">Location check required</p>
-              <p className="mt-1 text-sm leading-6 text-ink/60">
-                To join the public queue, allow location access and be within 2.5 km
-                of {activeStoreLocation.name}.
-              </p>
-              <button
-                type="button"
-                className="mt-4 rounded-full border border-stone-900/10 bg-white/80 px-4 py-2 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handleRequestLocationAccess}
-                disabled={isCheckingLocation}
-              >
-                {isCheckingLocation ? "Checking location..." : "Allow location access"}
-              </button>
-              {locationPermission === "denied" ? (
-                <p className="mt-3 text-sm font-semibold text-rose-700">
-                  Location access is blocked right now. Enable it in your browser
-                  settings to join the queue.
-                </p>
-              ) : null}
-            </div>
-
             {error ? (
               <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
                 {error}
@@ -423,7 +430,7 @@ function JoinPage() {
             <button
               type="submit"
               className="warm-button w-full py-4 text-base"
-              disabled={isSubmitting || locationPermission === "denied"}
+              disabled={isSubmitting || !hasLocationAccess}
             >
               {isSubmitting
                 ? isCheckingLocation
