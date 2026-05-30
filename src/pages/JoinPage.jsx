@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import CustomerCredits from "../components/CustomerCredits";
 import LoadingScreen from "../components/LoadingScreen";
@@ -22,6 +22,7 @@ import {
 } from "../../shared/storeLocations";
 
 const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
+const LOCATION_PROMPT_TIMEOUT_MS = 30000;
 
 function JoinPage() {
   const navigate = useNavigate();
@@ -33,11 +34,14 @@ function JoinPage() {
   const [isBooting, setIsBooting] = useState(true);
   const [isCheckingLocation, setIsCheckingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [locationAccessNotice, setLocationAccessNotice] = useState("");
   const [form, setForm] = useState({
     name: "",
     phone: "",
     partySize: 2,
   });
+  const locationRequestTimeoutRef = useRef(null);
+  const locationPermissionRef = useRef(locationPermission);
 
   useEffect(() => {
     let active = true;
@@ -133,6 +137,16 @@ function JoinPage() {
     );
   }, [ownerUid]);
 
+  useEffect(() => {
+    locationPermissionRef.current = locationPermission;
+  }, [locationPermission]);
+
+  useEffect(() => {
+    return () => {
+      clearLocationRequestTimeout();
+    };
+  }, []);
+
   const activeStoreLocation = getStoreLocation(locationMode);
 
   function updateField(field, value) {
@@ -144,20 +158,43 @@ function JoinPage() {
 
   const hasLocationAccess = locationPermission === "granted";
 
+  function clearLocationRequestTimeout() {
+    if (locationRequestTimeoutRef.current) {
+      window.clearTimeout(locationRequestTimeoutRef.current);
+      locationRequestTimeoutRef.current = null;
+    }
+  }
+
   async function handleRequestLocationAccess() {
     setError("");
+    setLocationAccessNotice("");
     setIsCheckingLocation(true);
+    clearLocationRequestTimeout();
+
+    locationRequestTimeoutRef.current = window.setTimeout(() => {
+      if (locationPermissionRef.current === "granted") {
+        return;
+      }
+
+      setLocationAccessNotice(
+        "We still haven’t received a browser location prompt after 30 seconds. Location access is likely turned off for this browser or this site. Please enable location access in the browser settings, then try again."
+      );
+      setIsCheckingLocation(false);
+    }, LOCATION_PROMPT_TIMEOUT_MS);
 
     try {
       await getCurrentPosition();
       setLocationPermission("granted");
+      setLocationAccessNotice("");
     } catch (locationError) {
       if (locationError?.code === 1) {
         setLocationPermission("denied");
       }
 
+      setLocationAccessNotice("");
       setError(getGeolocationErrorMessage(locationError));
     } finally {
+      clearLocationRequestTimeout();
       setIsCheckingLocation(false);
     }
   }
@@ -345,6 +382,11 @@ function JoinPage() {
                   If the browser does not show a prompt, location access is already
                   blocked for this site. Re-enable it from the browser’s site settings,
                   then tap the button again.
+                </p>
+              ) : null}
+              {locationAccessNotice ? (
+                <p className="mt-3 text-sm font-semibold text-amber-800">
+                  {locationAccessNotice}
                 </p>
               ) : null}
             </div>
