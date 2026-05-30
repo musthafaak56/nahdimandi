@@ -4,7 +4,22 @@ import CustomerCredits from "../components/CustomerCredits";
 import LoadingScreen from "../components/LoadingScreen";
 import { getFriendlyError } from "../lib/errors";
 import { ensureAnonymousSession } from "../lib/firebase";
-import { createQueueEntry, LAST_QUEUE_ENTRY_KEY } from "../lib/queue";
+import {
+  buildQueueJoinLocation,
+  formatDistanceMeters,
+  getCurrentPosition,
+  getGeolocationErrorMessage,
+} from "../lib/geofence";
+import {
+  createQueueEntry,
+  LAST_QUEUE_ENTRY_KEY,
+  subscribeToQueueSettings,
+} from "../lib/queue";
+import {
+  DEFAULT_STORE_LOCATION_MODE,
+  getStoreLocation,
+  normalizeStoreLocationMode,
+} from "../../shared/storeLocations";
 
 const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 
@@ -12,8 +27,11 @@ function JoinPage() {
   const navigate = useNavigate();
   const [ownerUid, setOwnerUid] = useState("");
   const [resumeQueueEntry, setResumeQueueEntry] = useState(null);
+  const [locationPermission, setLocationPermission] = useState("unknown");
+  const [locationMode, setLocationMode] = useState(DEFAULT_STORE_LOCATION_MODE);
   const [error, setError] = useState("");
   const [isBooting, setIsBooting] = useState(true);
+  const [isCheckingLocation, setIsCheckingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -68,11 +86,78 @@ function JoinPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.navigator?.permissions?.query) {
+      return;
+    }
+
+    let mounted = true;
+    let permissionStatus;
+
+    window.navigator.permissions
+      .query({ name: "geolocation" })
+      .then((status) => {
+        if (!mounted) {
+          return;
+        }
+
+        permissionStatus = status;
+        setLocationPermission(status.state);
+        permissionStatus.onchange = () => {
+          setLocationPermission(permissionStatus.state);
+        };
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ownerUid) {
+      return;
+    }
+
+    return subscribeToQueueSettings(
+      (settings) => {
+        setLocationMode(
+          normalizeStoreLocationMode(settings?.locationMode)
+        );
+      },
+      () => {}
+    );
+  }, [ownerUid]);
+
+  const activeStoreLocation = getStoreLocation(locationMode);
+
   function updateField(field, value) {
     setForm((current) => ({
       ...current,
       [field]: value,
     }));
+  }
+
+  async function handleRequestLocationAccess() {
+    setError("");
+    setIsCheckingLocation(true);
+
+    try {
+      await getCurrentPosition();
+      setLocationPermission("granted");
+    } catch (locationError) {
+      if (locationError?.code === 1) {
+        setLocationPermission("denied");
+      }
+
+      setError(getGeolocationErrorMessage(locationError));
+    } finally {
+      setIsCheckingLocation(false);
+    }
   }
 
   async function handleSubmit(event) {
@@ -97,14 +182,49 @@ function JoinPage() {
       return;
     }
 
+    if (locationPermission === "denied") {
+      setError("Location access is required to join the public queue near the store.");
+      return;
+    }
+
     setIsSubmitting(true);
+    setIsCheckingLocation(true);
+
+    let verifiedLocation;
+
+    try {
+      const position = await getCurrentPosition();
+      const proximity = buildQueueJoinLocation(position.coords, activeStoreLocation);
+
+      if (!proximity.withinRadius) {
+        setError(
+          `Queue check-in is only available within 2.5 km of ${activeStoreLocation.name}. You are about ${formatDistanceMeters(
+            proximity.distanceMeters
+          )} away.`
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      verifiedLocation = proximity.location;
+    } catch (locationError) {
+      if (locationError?.code === 1) {
+        setLocationPermission("denied");
+      }
+
+      setError(getGeolocationErrorMessage(locationError));
+      setIsSubmitting(false);
+      return;
+    } finally {
+      setIsCheckingLocation(false);
+    }
 
     try {
       const entry = await createQueueEntry({
         name: trimmedName,
         phone: trimmedPhone,
         partySize: Number(form.partySize),
-        ownerUid,
+        location: verifiedLocation,
       });
 
       navigate(`/status?id=${entry.id}&date=${entry.queueDate}`, {
@@ -112,12 +232,18 @@ function JoinPage() {
         state: { justJoined: true },
       });
     } catch (submitError) {
-      setError(
-        getFriendlyError(
-          submitError,
-          "We could not save your queue request. Try again."
-        )
-      );
+      if (submitError?.code === "permission-denied") {
+        setError(
+          "We could not verify your public queue check-in yet. Make sure location access is allowed and try again while you are within 2.5 km of the restaurant."
+        );
+      } else {
+        setError(
+          getFriendlyError(
+            submitError,
+            "We could not save your queue request. Try again."
+          )
+        );
+      }
       setIsSubmitting(false);
     }
   }
@@ -137,7 +263,7 @@ function JoinPage() {
             Nahdi Mandi
           </p>
           <h1 className="mt-4 max-w-xl font-display text-5xl leading-[1.02] text-ink sm:text-6xl">
-            Join the table queue without the WhatsApp back-and-forth.
+            Join the table queue in under a minute.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-ink/74">
             Check in once, track your place live, and get a free browser alert
@@ -266,14 +392,46 @@ function JoinPage() {
               </div>
             </div>
 
+            <div className="rounded-[1.5rem] border border-stone-900/10 bg-white/55 p-4">
+              <p className="text-sm font-semibold text-ink/80">Location check required</p>
+              <p className="mt-1 text-sm leading-6 text-ink/60">
+                To join the public queue, allow location access and be within 2.5 km
+                of {activeStoreLocation.name}.
+              </p>
+              <button
+                type="button"
+                className="mt-4 rounded-full border border-stone-900/10 bg-white/80 px-4 py-2 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleRequestLocationAccess}
+                disabled={isCheckingLocation}
+              >
+                {isCheckingLocation ? "Checking location..." : "Allow location access"}
+              </button>
+              {locationPermission === "denied" ? (
+                <p className="mt-3 text-sm font-semibold text-rose-700">
+                  Location access is blocked right now. Enable it in your browser
+                  settings to join the queue.
+                </p>
+              ) : null}
+            </div>
+
             {error ? (
               <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
                 {error}
               </div>
             ) : null}
 
-            <button type="submit" className="warm-button w-full py-4 text-base" disabled={isSubmitting}>
-              {isSubmitting ? "Adding your party..." : "Join the queue"}
+            <button
+              type="submit"
+              className="warm-button w-full py-4 text-base"
+              disabled={isSubmitting || locationPermission === "denied"}
+            >
+              {isSubmitting
+                ? isCheckingLocation
+                  ? "Checking your location..."
+                  : "Adding your party..."
+                : locationPermission === "denied"
+                  ? "Enable location to join"
+                : "Join the queue"}
             </button>
           </form>
         </section>

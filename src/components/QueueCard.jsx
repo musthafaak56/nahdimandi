@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
+import { formatDistanceMeters } from "../lib/geofence";
 import { formatClock, formatJoinedLabel, toMillis } from "../lib/time";
 
 function buildTelHref(phone) {
@@ -7,9 +8,40 @@ function buildTelHref(phone) {
   return normalizedPhone ? `tel:${normalizedPhone}` : null;
 }
 
+function buildLocationStatusLabel(location, storeName, label) {
+  if (!location) {
+    return `${label} unavailable`;
+  }
+
+  const distanceLabel = formatDistanceMeters(location.distanceMeters);
+  const rangeLabel = location.withinRadius ? "inside 2.5 km" : "outside 2.5 km";
+
+  return `${label}: ${distanceLabel} from ${storeName || "the store"} (${rangeLabel})`;
+}
+
 function QueueCard({ entry, position, busyAction, onAction }) {
   const [timeLeft, setTimeLeft] = useState(null);
   const callHref = buildTelHref(entry.phone);
+  const joinDistanceLabel =
+    entry.joinSource === "admin"
+      ? "Added by admin at the desk"
+      : buildLocationStatusLabel(entry.location, entry.storeName, "Joined");
+  const joinDistanceTone =
+    entry.joinSource === "admin"
+      ? "text-admin-text"
+      : entry.location?.withinRadius
+        ? "text-admin-mint"
+        : "text-amber-500";
+  const tableReadyDistanceLabel =
+    entry.status === "notified" && !entry.tableReadyLocation
+      ? "Table-ready check pending"
+      : entry.tableReadyLocation
+        ? buildLocationStatusLabel(
+            entry.tableReadyLocation,
+            entry.storeName,
+            "Table-ready check"
+          )
+        : null;
 
   useEffect(() => {
     if (entry.status !== "notified" || !entry.notifiedAt) {
@@ -41,6 +73,9 @@ function QueueCard({ entry, position, busyAction, onAction }) {
             <span className="rounded-full bg-admin-cyan/10 px-3 py-1 font-admin text-xs font-semibold uppercase tracking-[0.22em] text-admin-cyan">
               Queue #{position}
             </span>
+            <span className="rounded-full bg-white/10 px-3 py-1 font-admin text-xs font-semibold uppercase tracking-[0.22em] text-admin-text">
+              ID #{entry.queueNumber || "--"}
+            </span>
             <StatusBadge status={entry.status} />
           </div>
           <h2 className="mt-4 font-admin text-2xl font-bold text-admin-text">
@@ -56,6 +91,22 @@ function QueueCard({ entry, position, busyAction, onAction }) {
                 Timer: {timeLeft}s
               </span>
             )}
+            <span
+              className={`font-semibold ${joinDistanceTone}`}
+            >
+              {joinDistanceLabel}
+            </span>
+            {tableReadyDistanceLabel ? (
+              <span
+                className={
+                  entry.tableReadyLocation?.withinRadius
+                    ? "font-semibold text-admin-mint"
+                    : "font-semibold text-amber-500"
+                }
+              >
+                {tableReadyDistanceLabel}
+              </span>
+            ) : null}
           </div>
         </div>
 

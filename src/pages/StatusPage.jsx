@@ -5,12 +5,31 @@ import LoadingScreen from "../components/LoadingScreen";
 import StatusBadge from "../components/StatusBadge";
 import { getFriendlyError } from "../lib/errors";
 import { ensureAnonymousSession } from "../lib/firebase";
+import {
+  buildQueueJoinLocation,
+  formatDistanceMeters,
+  getCurrentPosition,
+  getGeolocationErrorMessage,
+} from "../lib/geofence";
 import { subscribeToForegroundMessages, requestQueueNotifications } from "../lib/notifications";
 import { playReadyChime } from "../lib/sound";
 import { formatClock, toMillis } from "../lib/time";
-import { bumpDownQueueEntry, ACTIVE_QUEUE_STATUSES, subscribeToQueueEntry, subscribeToActiveQueue } from "../lib/queue";
+import {
+  bumpDownQueueEntry,
+  ACTIVE_QUEUE_STATUSES,
+  confirmTableReadyArrival,
+  subscribeToQueueEntry,
+  subscribeToActiveQueue,
+} from "../lib/queue";
+import {
+  DEFAULT_STORE_LOCATION_MODE,
+  getStoreLocation,
+  normalizeStoreLocationMode,
+} from "../../shared/storeLocations";
 
 const GOOGLE_REVIEW_URL = "https://maps.app.goo.gl/FVabh8HZ7tCmbmhb7?g_st=ic";
+const PERMISSION_DENIED_RETRY_LIMIT = 1;
+const PERMISSION_DENIED_RETRY_DELAY_MS = 750;
 
 function StatusPage() {
   const location = useLocation();
@@ -27,7 +46,23 @@ function StatusPage() {
   const [pushMessage, setPushMessage] = useState("");
   const [timeLeft, setTimeLeft] = useState(null);
   const [wasAutoBumped, setWasAutoBumped] = useState(false);
+  const [readyCheckState, setReadyCheckState] = useState("idle");
+  const [readyCheckMessage, setReadyCheckMessage] = useState("");
+  const [isConfirmingArrival, setIsConfirmingArrival] = useState(false);
   const previousStatusRef = useRef("");
+  const readyCheckAttemptRef = useRef("");
+
+  function buildArrivalMessage(distanceMeters, withinRadius) {
+    if (withinRadius) {
+      return `Location confirmed. You are about ${formatDistanceMeters(
+        distanceMeters
+      )} away and within the 2.5 km arrival zone.`;
+    }
+
+    return `You are about ${formatDistanceMeters(
+      distanceMeters
+    )} away. Move within 2.5 km of the restaurant, then try the location check again.`;
+  }
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -51,6 +86,129 @@ function StatusPage() {
     let isActive = true;
     let unsubscribeEntry = () => {};
     let unsubscribeQueue = () => {};
+    let entryPermissionRetryCount = 0;
+    let queuePermissionRetryCount = 0;
+    const retryTimers = new Set();
+
+    function clearRetryTimers() {
+      retryTimers.forEach((timerId) => clearTimeout(timerId));
+      retryTimers.clear();
+    }
+
+    function scheduleEntryRetry() {
+      if (entryPermissionRetryCount >= PERMISSION_DENIED_RETRY_LIMIT) {
+        setError(
+          getFriendlyError(
+            { code: "permission-denied" },
+            "We could not load your queue status."
+          )
+        );
+        setIsBooting(false);
+        return;
+      }
+
+      entryPermissionRetryCount += 1;
+      const timerId = window.setTimeout(() => {
+        retryTimers.delete(timerId);
+
+        if (!isActive) {
+          return;
+        }
+
+        unsubscribeEntry();
+        attachEntryListener();
+      }, PERMISSION_DENIED_RETRY_DELAY_MS);
+
+      retryTimers.add(timerId);
+    }
+
+    function scheduleQueueRetry() {
+      if (queuePermissionRetryCount >= PERMISSION_DENIED_RETRY_LIMIT) {
+        setError(
+          getFriendlyError(
+            { code: "permission-denied" },
+            "We could not sync the queue."
+          )
+        );
+        setIsBooting(false);
+        return;
+      }
+
+      queuePermissionRetryCount += 1;
+      const timerId = window.setTimeout(() => {
+        retryTimers.delete(timerId);
+
+        if (!isActive) {
+          return;
+        }
+
+        unsubscribeQueue();
+        attachQueueListener();
+      }, PERMISSION_DENIED_RETRY_DELAY_MS);
+
+      retryTimers.add(timerId);
+    }
+
+    function attachEntryListener() {
+      unsubscribeEntry = subscribeToQueueEntry(
+        queueDate,
+        entryId,
+        (snapshot) => {
+          if (!snapshot.exists()) {
+            setError("That queue entry could not be found.");
+            setIsBooting(false);
+            return;
+          }
+
+          startTransition(() => {
+            setEntry({
+              id: snapshot.id,
+              ...snapshot.data(),
+            });
+            setIsBooting(false);
+          });
+        },
+        (snapshotError) => {
+          if (!isActive) {
+            return;
+          }
+
+          if (snapshotError?.code === "permission-denied") {
+            scheduleEntryRetry();
+            return;
+          }
+
+          setError(getFriendlyError(snapshotError, "We could not load your queue status."));
+          setIsBooting(false);
+        }
+      );
+    }
+
+    function attachQueueListener() {
+      unsubscribeQueue = subscribeToActiveQueue(
+        (activeQueue) => {
+          if (!isActive) {
+            return;
+          }
+
+          startTransition(() => {
+            setQueueEntries(activeQueue);
+          });
+        },
+        (queueError) => {
+          if (!isActive) {
+            return;
+          }
+
+          if (queueError?.code === "permission-denied") {
+            scheduleQueueRetry();
+            return;
+          }
+
+          setError(getFriendlyError(queueError, "We could not sync the queue."));
+        }
+      );
+    }
 
     ensureAnonymousSession()
       .then(() => {
@@ -58,52 +216,8 @@ function StatusPage() {
           return;
         }
 
-        unsubscribeEntry = subscribeToQueueEntry(
-          queueDate,
-          entryId,
-          (snapshot) => {
-            if (!snapshot.exists()) {
-              setError("That queue entry could not be found.");
-              setIsBooting(false);
-              return;
-            }
-
-            startTransition(() => {
-              setEntry({
-                id: snapshot.id,
-                ...snapshot.data(),
-              });
-              setIsBooting(false);
-            });
-          },
-          (snapshotError) => {
-            if (!isActive) {
-              return;
-            }
-
-            setError(getFriendlyError(snapshotError, "We could not load your queue status."));
-            setIsBooting(false);
-          }
-        );
-
-        unsubscribeQueue = subscribeToActiveQueue(
-          (activeQueue) => {
-            if (!isActive) {
-              return;
-            }
-
-            startTransition(() => {
-              setQueueEntries(activeQueue);
-            });
-          },
-          (queueError) => {
-            if (!isActive) {
-              return;
-            }
-
-            setError(getFriendlyError(queueError, "We could not sync the queue."));
-          }
-        );
+        attachEntryListener();
+        attachQueueListener();
       })
       .catch((sessionError) => {
         if (!isActive) {
@@ -121,6 +235,7 @@ function StatusPage() {
 
     return () => {
       isActive = false;
+      clearRetryTimers();
       unsubscribeEntry();
       unsubscribeQueue();
     };
@@ -181,6 +296,29 @@ function StatusPage() {
   }, [entry?.status]);
 
   useEffect(() => {
+    if (entry?.status !== "notified") {
+      readyCheckAttemptRef.current = "";
+      setReadyCheckState("idle");
+      setReadyCheckMessage("");
+      return;
+    }
+
+    if (!entry?.tableReadyLocation) {
+      return;
+    }
+
+    setReadyCheckState(
+      entry.tableReadyLocation.withinRadius ? "confirmed" : "outside-radius"
+    );
+    setReadyCheckMessage(
+      buildArrivalMessage(
+        entry.tableReadyLocation.distanceMeters,
+        entry.tableReadyLocation.withinRadius
+      )
+    );
+  }, [entry?.status, entry?.tableReadyLocation]);
+
+  useEffect(() => {
     if (entry?.status !== "notified" || !entry?.notifiedAt || entry?.respondedAt) {
       setTimeLeft(null);
       return;
@@ -210,7 +348,10 @@ function StatusPage() {
       await bumpDownQueueEntry(entry.id, queueEntries, 2, { 
         status: "waiting",
         notifiedAt: null,
-        notifiedTimeoutSeconds: null
+        notifiedTimeoutSeconds: null,
+        respondedAt: null,
+        tableReadyLocation: null,
+        tableReadyCheckedAt: null,
       });
       setWasAutoBumped(true);
       setShowReadyOverlay(false);
@@ -218,6 +359,62 @@ function StatusPage() {
       console.error("Auto bump failed:", err);
     }
   }
+
+  async function verifyTableReadyArrival(options = {}) {
+    if (!entryId || !queueDate || entry?.status !== "notified") {
+      return;
+    }
+
+    if (isConfirmingArrival && !options.force) {
+      return;
+    }
+
+    setIsConfirmingArrival(true);
+    setReadyCheckState("checking");
+    setReadyCheckMessage("");
+
+    try {
+      const position = await getCurrentPosition();
+      const proximity = buildQueueJoinLocation(position.coords, activeStoreLocation);
+      const result = await confirmTableReadyArrival(entryId, queueDate, proximity.location);
+
+      setReadyCheckState(result.withinRadius ? "confirmed" : "outside-radius");
+      setReadyCheckMessage(
+        buildArrivalMessage(result.distanceMeters, result.withinRadius)
+      );
+    } catch (locationError) {
+      const errorMessage =
+        locationError?.code === 1 ||
+        locationError?.code === 2 ||
+        locationError?.code === 3 ||
+        locationError?.code === "geolocation-not-supported"
+          ? getGeolocationErrorMessage(locationError)
+          : getFriendlyError(
+              locationError,
+              "We could not confirm your live location for the table-ready alert."
+            );
+
+      setReadyCheckState("error");
+      setReadyCheckMessage(errorMessage);
+    } finally {
+      setIsConfirmingArrival(false);
+    }
+  }
+
+  useEffect(() => {
+    if (entry?.status !== "notified" || !entry?.notifiedAt) {
+      return;
+    }
+
+    const attemptKey = `${entry.id}:${toMillis(entry.notifiedAt)}`;
+
+    if (readyCheckAttemptRef.current === attemptKey) {
+      return;
+    }
+
+    readyCheckAttemptRef.current = attemptKey;
+    verifyTableReadyArrival();
+  }, [entry?.id, entry?.status, entry?.notifiedAt]);
 
 
 
@@ -246,6 +443,9 @@ function StatusPage() {
     return <LoadingScreen label="Syncing your place in line..." />;
   }
 
+  const activeStoreLocation = getStoreLocation(
+    normalizeStoreLocationMode(entry?.locationMode || DEFAULT_STORE_LOCATION_MODE)
+  );
   const positionIndex = queueEntries.findIndex((item) => item.id === entryId);
   const position = positionIndex >= 0 ? positionIndex + 1 : null;
   const activeCount = queueEntries.length;
@@ -309,6 +509,36 @@ function StatusPage() {
                 </span>
               ) : "This alert stays on until you are seated."}
             </p>
+            <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/70 p-4 text-left">
+              <p className="text-sm font-semibold text-ink/80">Live location check</p>
+              <p className="mt-2 text-sm leading-6 text-ink/70">
+                We re-check your distance now so the front desk knows whether you
+                are within 2.5 km of the restaurant.
+              </p>
+              {readyCheckMessage ? (
+                <div
+                  className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                    readyCheckState === "confirmed"
+                      ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-800"
+                      : readyCheckState === "outside-radius"
+                        ? "border border-amber-500/20 bg-amber-500/10 text-amber-800"
+                        : readyCheckState === "error"
+                          ? "border border-rose-500/20 bg-rose-500/10 text-rose-700"
+                          : "border border-stone-900/10 bg-white/80 text-ink/70"
+                  }`}
+                >
+                  {readyCheckMessage}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="warm-button mt-4 w-full justify-center"
+                onClick={() => verifyTableReadyArrival({ force: true })}
+                disabled={isConfirmingArrival}
+              >
+                {isConfirmingArrival ? "Checking live location..." : "Check live location"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -373,6 +603,9 @@ function StatusPage() {
                   Guest
                 </p>
                 <p className="mt-2 text-xl font-semibold text-ink">{entry.name}</p>
+                <p className="mt-2 text-sm text-ink/65">
+                  Queue ID #{entry.queueNumber || "--"}
+                </p>
               </div>
             </div>
           ) : null}

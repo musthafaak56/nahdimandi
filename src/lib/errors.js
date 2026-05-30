@@ -5,7 +5,8 @@ const ERROR_MESSAGES = {
   "auth/network-request-failed":
     "The server could not be reached. Check your connection and config.",
   "permission-denied":
-    "The app does not have permission to read this queue entry yet. Please refresh and try again.",
+    "The app could not verify this queue entry yet. Please refresh and try again.",
+  internal: "The queue service is temporarily unavailable. Please refresh and try again.",
   "not-found": "That queue entry no longer exists.",
   unavailable: "The server is temporarily unavailable. Try again shortly.",
 };
@@ -15,5 +16,9 @@ export function getFriendlyError(error, fallback = "Something went wrong.") {
     return fallback;
   }
 
-  return ERROR_MESSAGES[error.code] || fallback;
+  return (
+    ERROR_MESSAGES[error.code] ||
+    (typeof error.message === "string" && error.message.trim()) ||
+    fallback
+  );
 }

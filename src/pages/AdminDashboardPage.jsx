@@ -6,7 +6,7 @@ import { useAuthState } from "../components/AuthProvider";
 import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 import AdminHistoryView from "../components/AdminHistoryView";
-import { 
+import {
   createQueueEntry,
   subscribeToAdminQueue, 
   updateQueueStatus, 
@@ -14,6 +14,11 @@ import {
   subscribeToQueueSettings,
   updateQueueSettings
 } from "../lib/queue";
+import {
+  DEFAULT_STORE_LOCATION_MODE,
+  getStoreLocation,
+  normalizeStoreLocationMode,
+} from "../../shared/storeLocations";
 
 const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
 
@@ -73,6 +78,7 @@ function AdminDashboardPage() {
   const [notifiedTimeout, setNotifiedTimeout] = useState(30);
   const [bumpDownDraft, setBumpDownDraft] = useState(3);
   const [timeoutDraft, setTimeoutDraft] = useState(30);
+  const [locationMode, setLocationMode] = useState(DEFAULT_STORE_LOCATION_MODE);
   const [adminForm, setAdminForm] = useState({
     name: "",
     phone: "",
@@ -81,6 +87,9 @@ function AdminDashboardPage() {
   const [isAddingParty, setIsAddingParty] = useState(false);
   const [isSavingBumpDown, setIsSavingBumpDown] = useState(false);
   const [isSavingTimeout, setIsSavingTimeout] = useState(false);
+  const [isSavingLocationMode, setIsSavingLocationMode] = useState(false);
+  const [secretTapCount, setSecretTapCount] = useState(0);
+  const [showSecretLocationModal, setShowSecretLocationModal] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToAdminQueue(
@@ -104,6 +113,7 @@ function AdminDashboardPage() {
         const nextTimeout = settings.notifiedTimeoutSeconds || 30;
         setNotifiedTimeout(nextTimeout);
         setTimeoutDraft(nextTimeout);
+        setLocationMode(normalizeStoreLocationMode(settings.locationMode));
       },
       (settingsError) => {
         console.error("Failed to load settings:", settingsError);
@@ -142,6 +152,23 @@ function AdminDashboardPage() {
     }
   }
 
+  async function handleUpdateLocationMode(nextMode) {
+    const normalizedMode = normalizeStoreLocationMode(nextMode);
+    setError("");
+    setIsSavingLocationMode(true);
+
+    try {
+      await updateQueueSettings({ locationMode: normalizedMode });
+      setLocationMode(normalizedMode);
+      setShowSecretLocationModal(false);
+      setSecretTapCount(0);
+    } catch (err) {
+      setError("Failed to switch queue location mode.");
+    } finally {
+      setIsSavingLocationMode(false);
+    }
+  }
+
   async function handleAction(entryId, status) {
     setBusyAction(`${entryId}:${status}`);
     setError("");
@@ -153,6 +180,9 @@ function AdminDashboardPage() {
           status: "waiting",
           notifiedAt: null,
           notifiedTimeoutSeconds: null,
+          respondedAt: null,
+          tableReadyLocation: null,
+          tableReadyCheckedAt: null,
         });
       } else if (status === "notified") {
         await updateQueueStatus(entryId, status, {
@@ -217,9 +247,10 @@ function AdminDashboardPage() {
         name: trimmedName,
         phone: trimmedPhone,
         partySize,
-        ownerUid: user.uid,
         persistLocal: false,
       });
+
+      setSecretTapCount(0);
 
       setAdminForm({
         name: "",
@@ -235,6 +266,23 @@ function AdminDashboardPage() {
     }
   }
 
+  function handleAddPartyButtonClick() {
+    if (isAddingParty) {
+      return;
+    }
+
+    setSecretTapCount((current) => {
+      const nextCount = current + 1;
+
+      if (nextCount >= 8) {
+        setShowSecretLocationModal(true);
+        return 0;
+      }
+
+      return nextCount;
+    });
+  }
+
   const deferredEntries = useDeferredValue(entries);
   const waitingEntries = deferredEntries.filter((entry) => entry.status === "waiting");
   const totalPartySize = deferredEntries.reduce(
@@ -242,9 +290,70 @@ function AdminDashboardPage() {
     0
   );
   const nextUp = waitingEntries[0] || deferredEntries[0] || null;
+  const activeStoreLocation = getStoreLocation(locationMode);
 
   return (
     <main className="min-h-screen bg-admin-base px-4 py-6 text-admin-text sm:px-6 lg:px-8">
+      {showSecretLocationModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-admin-base/75 px-4 backdrop-blur-sm">
+          <div className="admin-panel w-full max-w-lg p-6 sm:p-7">
+            <p className="font-admin text-sm font-semibold uppercase tracking-[0.28em] text-admin-cyan">
+              Queue location mode
+            </p>
+            <h2 className="mt-3 font-admin text-3xl font-bold text-admin-text">
+              Switch test or production
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-admin-mute">
+              This changes which store location new public queue joins use for the
+              2.5 km geofence. Existing queue entries keep the mode they were created with.
+            </p>
+
+            <div className="mt-6 space-y-3">
+              <button
+                type="button"
+                className="admin-button w-full justify-between bg-admin-cyan/12 text-admin-text ring-1 ring-admin-cyan/25 hover:bg-admin-cyan/18 focus:ring-admin-cyan/20"
+                onClick={() => handleUpdateLocationMode("test")}
+                disabled={isSavingLocationMode}
+              >
+                <span>Use Test Location</span>
+                <span className="text-xs uppercase tracking-[0.22em] text-admin-cyan">
+                  {locationMode === "test" ? "Active" : "Tap to switch"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="admin-button w-full justify-between bg-white/10 text-admin-text ring-1 ring-white/15 hover:bg-white/16 focus:ring-white/10"
+                onClick={() => handleUpdateLocationMode("production")}
+                disabled={isSavingLocationMode}
+              >
+                <span>Use Production Location</span>
+                <span className="text-xs uppercase tracking-[0.22em] text-admin-cyan">
+                  {locationMode === "production" ? "Active" : "Tap to switch"}
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-admin-line/40 bg-admin-base/55 p-4 text-sm text-admin-mute">
+              Current mode: {locationMode}
+              <br />
+              Store: {activeStoreLocation.name}
+            </div>
+
+            <button
+              type="button"
+              className="admin-button mt-6 w-full bg-admin-text text-admin-base hover:bg-white focus:ring-white/10"
+              onClick={() => {
+                setShowSecretLocationModal(false);
+                setSecretTapCount(0);
+              }}
+              disabled={isSavingLocationMode}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <header className="rounded-[2rem] border border-admin-line/70 bg-[radial-gradient(circle_at_top_left,_rgba(126,213,168,0.15),_transparent_30%),radial-gradient(circle_at_80%_10%,_rgba(82,199,234,0.18),_transparent_28%),linear-gradient(145deg,_rgba(16,24,32,1)_0%,_rgba(20,33,44,1)_52%,_rgba(12,18,27,1)_100%)] p-6 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -321,6 +430,7 @@ function AdminDashboardPage() {
                     type="submit"
                     className="admin-button bg-admin-cyan text-admin-base hover:bg-[#76d4f0] focus:ring-admin-cyan/20"
                     disabled={isAddingParty}
+                    onClick={handleAddPartyButtonClick}
                   >
                     {isAddingParty ? "Adding..." : "Add party"}
                   </button>
@@ -396,6 +506,16 @@ function AdminDashboardPage() {
                     >
                       {isSavingBumpDown ? "Saving..." : "Save"}
                     </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-admin-line/30 bg-admin-base/50 p-4">
+                  <label className="text-sm font-medium text-admin-mute">
+                    Queue geofence mode
+                  </label>
+                  <div className="mt-3 rounded-2xl border border-admin-line/40 bg-admin-base/60 px-4 py-3 text-sm text-admin-text">
+                    <span className="font-semibold capitalize">{locationMode}</span>
+                    {` · ${activeStoreLocation.name}`}
                   </div>
                 </div>
 

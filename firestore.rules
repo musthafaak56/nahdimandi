@@ -15,25 +15,169 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == resourceData.ownerUid;
     }
 
+    function isBoolean(value) {
+      return value == true || value == false;
+    }
+
+    function getActiveLocationMode() {
+      return exists(/databases/$(database)/documents/settings/queue)
+        && get(/databases/$(database)/documents/settings/queue).data.locationMode == 'test'
+          ? 'test'
+          : 'production';
+    }
+
+    function isKnownLocationMode(mode) {
+      return mode == 'production' || mode == 'test';
+    }
+
+    function isKnownStoreName(storeName, mode) {
+      return (mode == 'production' && storeName == 'Nahdi Mandi Kannur')
+        || (mode == 'test' && storeName == '394F+278, Madeena Rd, Kuttiyeri, Kerala 670141');
+    }
+
+    function isMatchingLocationSnapshot(location, mode, requireWithinRadius) {
+      return location is map
+        && location.lat is number
+        && location.lng is number
+        && location.accuracyMeters is number
+        && location.distanceMeters is number
+        && isBoolean(location.withinRadius)
+        && location.storeMode == mode
+        && isKnownStoreName(location.storeName, mode)
+        && location.accuracyMeters >= 0
+        && location.accuracyMeters <= 1000
+        && location.distanceMeters >= 0
+        && (!requireWithinRadius || (location.withinRadius == true && location.distanceMeters <= 2500));
+    }
+
+    function isJoinLocationInsideMode(location, mode) {
+      return isMatchingLocationSnapshot(location, mode, true)
+        && (
+          (mode == 'production'
+            && location.lat >= 11.85088058825009
+            && location.lat <= 11.86884681174991
+            && location.lng >= 75.40552254473083
+            && location.lng <= 75.42388065526916)
+          || (mode == 'test'
+            && location.lat >= 12.04612318825009
+            && location.lat <= 12.06408941174991
+            && location.lng >= 75.3639412481664
+            && location.lng <= 75.3823013518336)
+        );
+    }
+
+    function isCounterLinkedToEntry(dateKey, entryId, ownerUid, queueNumber) {
+      return getAfter(/databases/$(database)/documents/queue_counters/$(dateKey)).data.lastEntryId == entryId
+        && getAfter(/databases/$(database)/documents/queue_counters/$(dateKey)).data.lastOwnerUid == ownerUid
+        && getAfter(/databases/$(database)/documents/queue_counters/$(dateKey)).data.lastQueueNumber == queueNumber;
+    }
+
+    function isValidCustomerQueueCreate(dateKey, entryId) {
+      return request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.queueDate == dateKey
+        && request.resource.data.joinSource == 'public'
+        && request.resource.data.locationMode == getActiveLocationMode()
+        && isKnownStoreName(request.resource.data.storeName, request.resource.data.locationMode)
+        && isJoinLocationInsideMode(request.resource.data.location, request.resource.data.locationMode)
+        && request.resource.data.tableReadyLocation == null
+        && request.resource.data.tableReadyCheckedAt == null
+        && request.resource.data.respondedAt == null
+        && isCounterLinkedToEntry(
+          dateKey,
+          entryId,
+          request.resource.data.ownerUid,
+          request.resource.data.queueNumber
+        );
+    }
+
+    function isValidAdminQueueCreate(dateKey, entryId) {
+      return request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.queueDate == dateKey
+        && request.resource.data.joinSource == 'admin'
+        && isKnownLocationMode(request.resource.data.locationMode)
+        && isKnownStoreName(request.resource.data.storeName, request.resource.data.locationMode)
+        && request.resource.data.location == null
+        && request.resource.data.tableReadyLocation == null
+        && request.resource.data.tableReadyCheckedAt == null
+        && request.resource.data.respondedAt == null
+        && isCounterLinkedToEntry(
+          dateKey,
+          entryId,
+          request.resource.data.ownerUid,
+          request.resource.data.queueNumber
+        );
+    }
+
+    function isValidOwnerQueueUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'fcmToken',
+        'fcmTokenUpdatedAt',
+        'tableReadyLocation',
+        'tableReadyCheckedAt',
+        'respondedAt'
+      ])
+        && (
+          request.resource.data.tableReadyLocation == resource.data.tableReadyLocation
+          || isMatchingLocationSnapshot(
+            request.resource.data.tableReadyLocation,
+            resource.data.locationMode,
+            false
+          )
+        )
+        && (
+          request.resource.data.respondedAt == null
+          || request.resource.data.tableReadyLocation.withinRadius == true
+        );
+    }
+
     match /customers_per_day/{dateKey}/entries/{entryId} {
       allow get: if isAuthenticated();
       allow list: if isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
-      allow update: if isAdmin() || (isOwner(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken', 'fcmTokenUpdatedAt']));
+      allow create: if isAuthenticated()
+        && (
+          (isAdmin() && isValidAdminQueueCreate(dateKey, entryId))
+          || (!isAdmin() && isValidCustomerQueueCreate(dateKey, entryId))
+        );
+      allow update: if isAdmin() || (isOwner(resource.data) && isValidOwnerQueueUpdate());
       allow delete: if isAdmin();
     }
 
     match /queue_public/{entryId} {
       // Anyone can read the public queue (for dashboard/status position)
       allow read: if isAuthenticated();
-      // Anyone can create their initial public queue representation when joining
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.queueDate is string
+        && existsAfter(/databases/$(database)/documents/customers_per_day/$(request.resource.data.queueDate)/entries/$(entryId))
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(request.resource.data.queueDate)/entries/$(entryId)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(request.resource.data.queueDate)/entries/$(entryId)).data.queueNumber == request.resource.data.queueNumber
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(request.resource.data.queueDate)/entries/$(entryId)).data.partySize == request.resource.data.partySize
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(request.resource.data.queueDate)/entries/$(entryId)).data.status == request.resource.data.status;
       // Only admins update or delete the public queue status
       allow update, delete: if isAdmin();
     }
 
+    match /queue_counters/{dateKey} {
+      allow get: if isAuthenticated();
+      allow list: if isAdmin();
+      allow create: if isAuthenticated()
+        && request.resource.data.lastQueueNumber == 1
+        && request.resource.data.lastEntryId is string
+        && request.resource.data.lastOwnerUid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId))
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId)).data.queueNumber == 1;
+      allow update: if isAuthenticated()
+        && request.resource.data.lastQueueNumber == resource.data.lastQueueNumber + 1
+        && request.resource.data.lastEntryId is string
+        && request.resource.data.lastOwnerUid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId))
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId)).data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/customers_per_day/$(dateKey)/entries/$(request.resource.data.lastEntryId)).data.queueNumber == request.resource.data.lastQueueNumber;
+      allow delete: if isAdmin();
+    }
+
     match /settings/{settingId} {
-      allow read: if isAdmin();
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
   }

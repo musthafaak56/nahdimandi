@@ -9,13 +9,12 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
 - Browser push notification opt-in using Firebase Cloud Messaging
 - Protected admin login at `/admin/login`
 - Real-time admin dashboard at `/admin`
-- Cloud Function that sends a table-ready push when an entry changes to `notified`
 
 ## Local setup
 
 1. Copy `.env.example` to `.env`.
 2. Fill in your Firebase web app config and VAPID key.
-3. Install packages in the root app and in `functions/`.
+3. Install packages in the root app.
 4. Run `npm run dev` for the frontend.
 
 ## Firebase setup checklist
@@ -29,7 +28,7 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
    - `firestore.indexes.json`
 4. Enable Firebase Cloud Messaging and create a web push certificate key pair.
 5. Add the public VAPID key to `VITE_FIREBASE_VAPID_KEY`.
-6. Deploy the Cloud Function from `functions/index.js`.
+6. Deploy the site and Firestore rules.
 
 ## Firestore model
 

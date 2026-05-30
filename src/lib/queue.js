@@ -1,17 +1,26 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db, isPasswordUser, waitForInitialAuth } from "./firebase";
 import { getRestaurantDateKey } from "./time";
+import {
+  DEFAULT_STORE_LOCATION_MODE,
+  getStoreLocation,
+  normalizeStoreLocationMode,
+} from "../../shared/storeLocations";
+import { calculateDistanceMeters } from "./geofence";
 
 export const ACTIVE_QUEUE_STATUSES = ["waiting", "notified"];
 export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
@@ -31,46 +40,213 @@ function getQueuePublicRef(queueId) {
   return doc(db, "queue_public", queueId);
 }
 
+function getQueueCounterRef(queueDate) {
+  return doc(db, "queue_counters", queueDate);
+}
+
+function getQueueSettingsRef() {
+  return doc(db, "settings", "queue");
+}
+
+function buildLocationSnapshot(location, storeLocation) {
+  if (!location) {
+    return null;
+  }
+
+  const latitude = Number(location.lat);
+  const longitude = Number(location.lng);
+  const accuracyMeters = Number(location.accuracyMeters || 0);
+  const distanceMeters = calculateDistanceMeters(
+    latitude,
+    longitude,
+    storeLocation.latitude,
+    storeLocation.longitude
+  );
+
+  return {
+    lat: latitude,
+    lng: longitude,
+    accuracyMeters,
+    distanceMeters,
+    withinRadius: distanceMeters <= storeLocation.radiusMeters,
+    storeMode: storeLocation.mode,
+    storeName: storeLocation.name,
+  };
+}
+
+async function createQueueEntryViaTransaction({
+  name,
+  phone,
+  partySize,
+  location,
+  joinSource,
+  storeLocation,
+  ownerUid,
+}) {
+  const queueDate = getRestaurantDateKey();
+  const queueRef = doc(collection(db, "customers_per_day", queueDate, "entries"));
+
+  const entry = await runTransaction(db, async (transaction) => {
+    const [counterSnapshot] = await Promise.all([
+      transaction.get(getQueueCounterRef(queueDate)),
+    ]);
+
+    const normalizedLocation =
+      joinSource === "public" ? buildLocationSnapshot(location, storeLocation) : null;
+
+    if (joinSource === "public" && !normalizedLocation?.withinRadius) {
+      const distanceError = new Error(
+        `Queue check-in is only available within 2.5 km of ${storeLocation.name}.`
+      );
+      distanceError.code = "failed-precondition";
+      throw distanceError;
+    }
+
+    const lastQueueNumber = counterSnapshot.exists()
+      ? Number(counterSnapshot.data()?.lastQueueNumber || 0)
+      : 0;
+    const queueNumber = lastQueueNumber + 1;
+    const counterData = {
+      lastQueueNumber: queueNumber,
+      lastEntryId: queueRef.id,
+      lastOwnerUid: ownerUid,
+      updatedAt: serverTimestamp(),
+    };
+    const queueData = {
+      name,
+      phone,
+      partySize,
+      queueDate,
+      queueNumber,
+      status: "waiting",
+      timestamp: serverTimestamp(),
+      ownerUid,
+      fcmToken: null,
+      fcmTokenUpdatedAt: null,
+      joinSource,
+      locationMode: storeLocation.mode,
+      storeName: storeLocation.name,
+      location: normalizedLocation,
+      tableReadyLocation: null,
+      tableReadyCheckedAt: null,
+      respondedAt: null,
+    };
+    const queuePublicData = {
+      partySize,
+      queueDate,
+      queueNumber,
+      status: "waiting",
+      timestamp: serverTimestamp(),
+    };
+
+    transaction.set(getQueueCounterRef(queueDate), counterData, { merge: true });
+    transaction.set(queueRef, queueData);
+    transaction.set(getQueuePublicRef(queueRef.id), queuePublicData);
+
+    return {
+      id: queueRef.id,
+      queueDate,
+      queueNumber,
+    };
+  });
+
+  return entry;
+}
+
 export async function createQueueEntry({
   name,
   phone,
   partySize,
-  ownerUid,
+  location = null,
   persistLocal = true,
 }) {
-  const queueDate = getRestaurantDateKey();
-  const queueRef = doc(collection(db, "customers_per_day", queueDate, "entries"));
-  const batch = writeBatch(db);
-  const queueData = {
+  const user = auth?.currentUser ?? (await waitForInitialAuth());
+
+  if (!user) {
+    throw new Error("You must be signed in before creating a queue entry.");
+  }
+
+  const locationMode = normalizeStoreLocationMode(
+    (await getDoc(getQueueSettingsRef())).data()?.locationMode || DEFAULT_STORE_LOCATION_MODE
+  );
+  const storeLocation = getStoreLocation(locationMode);
+  const joinSource = isPasswordUser(user) ? "admin" : "public";
+  const normalizedLocation =
+    joinSource === "public" ? buildLocationSnapshot(location, storeLocation) : null;
+
+  if (joinSource === "public" && !normalizedLocation?.withinRadius) {
+    const distanceError = new Error(
+      `Queue check-in is only available within 2.5 km of ${storeLocation.name}.`
+    );
+    distanceError.code = "failed-precondition";
+    throw distanceError;
+  }
+
+  const entry = await createQueueEntryViaTransaction({
     name,
     phone,
     partySize,
-    queueDate,
-    status: "waiting",
-    timestamp: serverTimestamp(),
-    ownerUid,
-    fcmToken: null,
-    fcmTokenUpdatedAt: null,
-  };
-  const queuePublicData = {
-    partySize,
-    queueDate,
-    status: "waiting",
-    timestamp: serverTimestamp(),
-  };
-
-  batch.set(queueRef, queueData);
-  batch.set(getQueuePublicRef(queueRef.id), queuePublicData);
-  await batch.commit();
+    location: normalizedLocation,
+    joinSource,
+    storeLocation,
+    ownerUid: user.uid,
+  });
 
   if (persistLocal && typeof window !== "undefined") {
     window.localStorage.setItem(
       LAST_QUEUE_ENTRY_KEY,
-      JSON.stringify({ id: queueRef.id, queueDate })
+      JSON.stringify({ id: entry.id, queueDate: entry.queueDate })
     );
   }
 
-  return { id: queueRef.id, queueDate };
+  return entry;
+}
+
+export async function confirmTableReadyArrival(entryId, queueDate, location) {
+  const user = auth?.currentUser ?? (await waitForInitialAuth());
+
+  if (!user) {
+    throw new Error("You must be signed in before updating your location.");
+  }
+
+  const entryRef = getCustomerEntryRef(queueDate, entryId);
+  const entrySnapshot = await getDoc(entryRef);
+
+  if (!entrySnapshot.exists()) {
+    const notFoundError = new Error("That queue entry could not be found.");
+    notFoundError.code = "not-found";
+    throw notFoundError;
+  }
+
+  const entry = entrySnapshot.data();
+
+  if (!isPasswordUser(user) && entry.ownerUid !== user.uid) {
+    const permissionError = new Error("You do not have permission to update this queue entry.");
+    permissionError.code = "permission-denied";
+    throw permissionError;
+  }
+
+  if (entry.status !== "notified") {
+    const statusError = new Error("Table-ready location can only be checked after notification.");
+    statusError.code = "failed-precondition";
+    throw statusError;
+  }
+
+  const storeLocation = getStoreLocation(
+    normalizeStoreLocationMode(entry.locationMode || DEFAULT_STORE_LOCATION_MODE)
+  );
+  const normalizedLocation = buildLocationSnapshot(location, storeLocation);
+
+  await updateDoc(entryRef, {
+    tableReadyLocation: normalizedLocation,
+    tableReadyCheckedAt: serverTimestamp(),
+    respondedAt: normalizedLocation.withinRadius ? serverTimestamp() : null,
+  });
+
+  return {
+    withinRadius: normalizedLocation.withinRadius,
+    distanceMeters: normalizedLocation.distanceMeters,
+  };
 }
 
 export function subscribeToQueueEntry(queueDate, entryId, onNext, onError) {
@@ -112,12 +288,15 @@ export function subscribeToAdminQueue(onNext, onError) {
 
 export function subscribeToQueueSettings(onNext, onError) {
   return onSnapshot(
-    doc(db, "settings", "queue"),
+    getQueueSettingsRef(),
     (snapshot) => {
       if (snapshot.exists()) {
         onNext(snapshot.data());
       } else {
-        onNext({ notifiedTimeoutSeconds: 30 });
+        onNext({
+          notifiedTimeoutSeconds: 30,
+          locationMode: DEFAULT_STORE_LOCATION_MODE,
+        });
       }
     },
     onError
@@ -125,7 +304,7 @@ export function subscribeToQueueSettings(onNext, onError) {
 }
 
 export async function updateQueueSettings(settings) {
-  await setDoc(doc(db, "settings", "queue"), settings, { merge: true });
+  await setDoc(getQueueSettingsRef(), settings, { merge: true });
 }
 
 export async function updateQueueStatus(entryId, status, options = {}) {
@@ -142,6 +321,8 @@ export async function updateQueueStatus(entryId, status, options = {}) {
     updates.notifiedAt = serverTimestamp();
     updates.notifiedTimeoutSeconds = options.notifiedTimeoutSeconds || 30;
     updates.respondedAt = null;
+    updates.tableReadyLocation = null;
+    updates.tableReadyCheckedAt = null;
   }
 
   if (status === "seated" || status === "cancelled") {
