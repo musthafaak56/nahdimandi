@@ -510,11 +510,16 @@ function StatusPage() {
               ) : "This alert stays on until you are seated."}
             </p>
             <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/70 p-4 text-left">
-              <p className="text-sm font-semibold text-ink/80">Live location check</p>
+              <p className="text-sm font-semibold text-ink/80">Automatic live location check</p>
               <p className="mt-2 text-sm leading-6 text-ink/70">
-                We re-check your distance now so the front desk knows whether you
-                are within 2.5 km of the restaurant.
+                We automatically re-check your distance now so the front desk knows
+                whether you are within 2.5 km of the restaurant.
               </p>
+              {isConfirmingArrival ? (
+                <div className="mt-4 rounded-2xl border border-stone-900/10 bg-white/80 px-4 py-3 text-sm text-ink/70">
+                  Checking live location automatically...
+                </div>
+              ) : null}
               {readyCheckMessage ? (
                 <div
                   className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
@@ -530,14 +535,6 @@ function StatusPage() {
                   {readyCheckMessage}
                 </div>
               ) : null}
-              <button
-                type="button"
-                className="warm-button mt-4 w-full justify-center"
-                onClick={() => verifyTableReadyArrival({ force: true })}
-                disabled={isConfirmingArrival}
-              >
-                {isConfirmingArrival ? "Checking live location..." : "Check live location"}
-              </button>
             </div>
           </div>
         </div>

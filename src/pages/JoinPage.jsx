@@ -177,7 +177,7 @@ function JoinPage() {
       }
 
       setLocationAccessNotice(
-        "We still haven’t received a browser location prompt after 30 seconds. Location access is likely turned off for this browser or this site. Please enable location access in the browser settings, then try again."
+        "We still haven’t received a browser location prompt after 30 seconds. Location access is likely turned off in the browser/site settings or in your phone’s location settings. Please enable location access, then try again."
       );
       setIsCheckingLocation(false);
     }, LOCATION_PROMPT_TIMEOUT_MS);
@@ -369,7 +369,7 @@ function JoinPage() {
                 type="button"
                 className="mt-4 rounded-full border border-stone-900/10 bg-white/90 px-4 py-2 text-sm font-semibold text-clove transition hover:border-ember/40 hover:text-ember disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleRequestLocationAccess}
-                disabled={isCheckingLocation || hasLocationAccess}
+                disabled={isCheckingLocation}
               >
                 {isCheckingLocation
                   ? "Checking location..."
