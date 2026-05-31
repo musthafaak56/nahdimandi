@@ -163,7 +163,7 @@ function StatusPage() {
           startTransition(() => {
             setEntry({
               id: snapshot.id,
-              ...snapshot.data(),
+              ...snapshot.data({ serverTimestamps: "estimate" }),
             });
             setIsBooting(false);
           });
@@ -186,6 +186,7 @@ function StatusPage() {
 
     function attachQueueListener() {
       unsubscribeQueue = subscribeToActiveQueue(
+        queueDate,
         (activeQueue) => {
           if (!isActive) {
             return;
@@ -319,7 +320,7 @@ function StatusPage() {
   }, [entry?.status, entry?.tableReadyLocation]);
 
   useEffect(() => {
-    if (entry?.status !== "notified" || !entry?.notifiedAt || entry?.respondedAt) {
+    if (entry?.status !== "notified" || !entry?.notifiedAt) {
       setTimeLeft(null);
       return;
     }
@@ -328,18 +329,28 @@ function StatusPage() {
     const timeoutSeconds = entry.notifiedTimeoutSeconds || 30;
     const endMillis = startMillis + timeoutSeconds * 1000;
 
-    const interval = setInterval(() => {
+    const updateTimeLeft = () => {
       const remaining = Math.max(0, Math.ceil((endMillis - Date.now()) / 1000));
       setTimeLeft(remaining);
+      return remaining;
+    };
 
-      if (remaining === 0) {
+    const initialRemaining = updateTimeLeft();
+
+    if (initialRemaining === 0) {
+      handleAutoBump();
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (updateTimeLeft() === 0) {
         clearInterval(interval);
         handleAutoBump();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [entry?.status, entry?.notifiedAt, entry?.respondedAt, entry?.notifiedTimeoutSeconds]);
+  }, [entry?.status, entry?.notifiedAt, entry?.notifiedTimeoutSeconds]);
 
   async function handleAutoBump() {
     if (entry?.status !== "notified" || entry?.respondedAt) return;

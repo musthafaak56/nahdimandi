@@ -1,4 +1,5 @@
 import {
+  collectionGroup,
   collection,
   doc,
   getDoc,
@@ -28,7 +29,7 @@ export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
 function mapDocs(snapshot) {
   return snapshot.docs.map((document) => ({
     id: document.id,
-    ...document.data(),
+    ...document.data({ serverTimestamps: "estimate" }),
   }));
 }
 
@@ -253,16 +254,21 @@ export function subscribeToQueueEntry(queueDate, entryId, onNext, onError) {
   return onSnapshot(getCustomerEntryRef(queueDate, entryId), onNext, onError);
 }
 
-export function subscribeToActiveQueue(onNext, onError) {
+export function subscribeToActiveQueue(queueDate, onNext, onError) {
   const activeQueueQuery = query(
     collection(db, "queue_public"),
-    where("status", "in", ACTIVE_QUEUE_STATUSES),
+    where("queueDate", "==", queueDate),
     orderBy("timestamp", "asc")
   );
 
   return onSnapshot(
     activeQueueQuery,
-    (snapshot) => onNext(mapDocs(snapshot)),
+    (snapshot) =>
+      onNext(
+        mapDocs(snapshot).filter((entry) =>
+          ACTIVE_QUEUE_STATUSES.includes(entry.status)
+        )
+      ),
     onError
   );
 }
@@ -406,4 +412,9 @@ export async function getQueueHistoryByDate(date) {
 
   const datedCollectionSnapshot = await getDocs(datedCollectionQuery);
   return mapDocs(datedCollectionSnapshot);
+}
+
+export async function getAllQueueHistory() {
+  const allEntriesSnapshot = await getDocs(collectionGroup(db, "entries"));
+  return mapDocs(allEntriesSnapshot);
 }

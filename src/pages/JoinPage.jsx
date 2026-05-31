@@ -15,13 +15,14 @@ import {
   LAST_QUEUE_ENTRY_KEY,
   subscribeToQueueSettings,
 } from "../lib/queue";
+import { normalizePhoneNumber } from "../lib/phone";
 import {
   DEFAULT_STORE_LOCATION_MODE,
   getStoreLocation,
   normalizeStoreLocationMode,
 } from "../../shared/storeLocations";
 
-const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
+const PHONE_PATTERN = /^\d{10}$/;
 const LOCATION_PROMPT_TIMEOUT_MS = 30000;
 
 function JoinPage() {
@@ -42,6 +43,7 @@ function JoinPage() {
   });
   const locationRequestTimeoutRef = useRef(null);
   const locationPermissionRef = useRef(locationPermission);
+  const emptySubmitCountRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -204,7 +206,25 @@ function JoinPage() {
     setError("");
 
     const trimmedName = form.name.trim();
-    const trimmedPhone = form.phone.trim();
+    const trimmedPhone = normalizePhoneNumber(form.phone.trim());
+    const isEmptySubmission = !trimmedName && !trimmedPhone;
+
+    if (isEmptySubmission) {
+      emptySubmitCountRef.current += 1;
+
+      if (emptySubmitCountRef.current >= 4) {
+        setForm({
+          name: "Test Guest",
+          phone: "8281851282",
+          partySize: 2,
+        });
+        emptySubmitCountRef.current = 0;
+      }
+
+      return;
+    }
+
+    emptySubmitCountRef.current = 0;
 
     if (trimmedName.length < 2) {
       setError("Please enter the guest name.");
@@ -212,7 +232,7 @@ function JoinPage() {
     }
 
     if (!PHONE_PATTERN.test(trimmedPhone)) {
-      setError("Please enter a valid phone number.");
+      setError("Please enter a 10-digit phone number.");
       return;
     }
 
@@ -412,7 +432,7 @@ function JoinPage() {
               <input
                 className="field-input"
                 type="tel"
-                placeholder="+91 9X XXX XXXXX"
+                placeholder="8281851282"
                 autoComplete="tel"
                 value={form.phone}
                 onChange={(event) => updateField("phone", event.target.value)}

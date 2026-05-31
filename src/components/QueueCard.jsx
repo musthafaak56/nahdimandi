@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 import { formatDistanceMeters } from "../lib/geofence";
+import { buildPhoneCallHref, formatPhoneNumber } from "../lib/phone";
 import { formatClock, formatJoinedLabel, toMillis } from "../lib/time";
-
-function buildTelHref(phone) {
-  const normalizedPhone = String(phone || "").replace(/[^\d+]/g, "");
-  return normalizedPhone ? `tel:${normalizedPhone}` : null;
-}
 
 function buildLocationStatusLabel(location, storeName, label) {
   if (!location) {
@@ -21,7 +17,8 @@ function buildLocationStatusLabel(location, storeName, label) {
 
 function QueueCard({ entry, position, busyAction, onAction }) {
   const [timeLeft, setTimeLeft] = useState(null);
-  const callHref = buildTelHref(entry.phone);
+  const callHref = buildPhoneCallHref(entry.phone);
+  const displayPhone = formatPhoneNumber(entry.phone);
   const joinDistanceLabel =
     entry.joinSource === "admin"
       ? "Added by admin at the desk"
@@ -82,7 +79,7 @@ function QueueCard({ entry, position, busyAction, onAction }) {
             {entry.name}
           </h2>
           <div className="mt-3 flex flex-wrap gap-3 text-sm text-admin-mute">
-            <span>{entry.phone}</span>
+            <span>{displayPhone}</span>
             <span>{entry.partySize} guests</span>
             <span>{formatJoinedLabel(entry.timestamp)}</span>
             <span>Joined at {formatClock(entry.timestamp)}</span>

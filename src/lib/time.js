@@ -1,5 +1,6 @@
 export const RESTAURANT_TIME_ZONE = "Asia/Kolkata";
 export const RESTAURANT_UTC_OFFSET = "+05:30";
+const RESTAURANT_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function toMillis(value) {
   if (!value) {
@@ -62,6 +63,50 @@ export function getRestaurantHour(value) {
       hourCycle: "h23",
     }).format(new Date(millis))
   );
+}
+
+export function getRestaurantWeekday(value) {
+  const millis = toMillis(value);
+
+  if (!millis) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TIME_ZONE,
+    weekday: "short",
+  }).format(new Date(millis));
+}
+
+export function getRestaurantWeekdayIndex(value) {
+  const weekday = getRestaurantWeekday(value);
+
+  if (!weekday) {
+    return null;
+  }
+
+  const index = RESTAURANT_WEEKDAYS.indexOf(weekday);
+  return index >= 0 ? index : null;
+}
+
+export function formatRestaurantDateLabel(dateKey) {
+  if (!dateKey) {
+    return "--";
+  }
+
+  const [year, month, day] = String(dateKey).split("-");
+  if (!year || !month || !day) {
+    return String(dateKey);
+  }
+
+  const midnight = new Date(`${dateKey}T12:00:00.000${RESTAURANT_UTC_OFFSET}`);
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TIME_ZONE,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(midnight);
 }
 
 export function formatElapsed(value) {

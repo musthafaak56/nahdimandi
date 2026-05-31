@@ -9,7 +9,7 @@ function SummaryStat({ label, value, tone }) {
   );
 }
 
-function SummaryBar({ totalWaiting, totalPartySize, nextUp }) {
+function SummaryBar({ totalWaiting, totalPartiesInQueue, nextUp }) {
   return (
     <section className="grid gap-4 sm:grid-cols-2">
       <SummaryStat
@@ -18,8 +18,8 @@ function SummaryBar({ totalWaiting, totalPartySize, nextUp }) {
         tone="text-admin-text"
       />
       <SummaryStat
-        label="Guests in queue"
-        value={String(totalPartySize).padStart(2, "0")}
+        label="Parties in queue"
+        value={String(totalPartiesInQueue).padStart(2, "0")}
         tone="text-admin-cyan"
       />
       <div className="sm:col-span-2">

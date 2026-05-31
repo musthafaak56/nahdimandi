@@ -6,6 +6,7 @@ import { useAuthState } from "../components/AuthProvider";
 import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 import AdminHistoryView from "../components/AdminHistoryView";
+import { normalizePhoneNumber } from "../lib/phone";
 import {
   createQueueEntry,
   subscribeToAdminQueue, 
@@ -20,7 +21,7 @@ import {
   normalizeStoreLocationMode,
 } from "../../shared/storeLocations";
 
-const PHONE_PATTERN = /^\+?[0-9\-\s]{8,15}$/;
+const PHONE_PATTERN = /^\d{10}$/;
 
 function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, Number(value || min)));
@@ -222,7 +223,7 @@ function AdminDashboardPage() {
     setError("");
 
     const trimmedName = adminForm.name.trim();
-    const trimmedPhone = adminForm.phone.trim();
+    const trimmedPhone = normalizePhoneNumber(adminForm.phone.trim());
     const partySize = Number(adminForm.partySize);
 
     if (trimmedName.length < 2) {
@@ -231,7 +232,7 @@ function AdminDashboardPage() {
     }
 
     if (!PHONE_PATTERN.test(trimmedPhone)) {
-      setError("Enter a valid phone number for the walk-in party.");
+      setError("Enter a 10-digit phone number for the walk-in party.");
       return;
     }
 
@@ -285,10 +286,7 @@ function AdminDashboardPage() {
 
   const deferredEntries = useDeferredValue(entries);
   const waitingEntries = deferredEntries.filter((entry) => entry.status === "waiting");
-  const totalPartySize = deferredEntries.reduce(
-    (total, entry) => total + Number(entry.partySize || 0),
-    0
-  );
+  const totalPartiesInQueue = deferredEntries.length;
   const nextUp = waitingEntries[0] || deferredEntries[0] || null;
   const activeStoreLocation = getStoreLocation(locationMode);
 
@@ -459,7 +457,7 @@ function AdminDashboardPage() {
                       type="tel"
                       value={adminForm.phone}
                       onChange={(event) => updateAdminForm("phone", event.target.value)}
-                      placeholder="+91 9X XXX XXXXX"
+                      placeholder="8281851282"
                     />
                   </label>
 
@@ -479,7 +477,7 @@ function AdminDashboardPage() {
 
               <SummaryBar
                 totalWaiting={waitingEntries.length}
-                totalPartySize={totalPartySize}
+                totalPartiesInQueue={totalPartiesInQueue}
                 nextUp={nextUp}
               />
 
