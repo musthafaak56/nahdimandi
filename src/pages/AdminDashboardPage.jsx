@@ -7,6 +7,7 @@ import { auth } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 import AdminHistoryView from "../components/AdminHistoryView";
 import { normalizePhoneNumber } from "../lib/phone";
+import { formatDistanceMeters } from "../lib/geofence";
 import {
   createQueueEntry,
   subscribeToAdminQueue, 
@@ -16,6 +17,7 @@ import {
   updateQueueSettings
 } from "../lib/queue";
 import {
+  DEFAULT_TEST_STORE_LOCATION,
   DEFAULT_STORE_LOCATION_MODE,
   getStoreLocation,
   normalizeStoreLocationMode,
@@ -80,6 +82,7 @@ function AdminDashboardPage() {
   const [bumpDownDraft, setBumpDownDraft] = useState(3);
   const [timeoutDraft, setTimeoutDraft] = useState(30);
   const [locationMode, setLocationMode] = useState(DEFAULT_STORE_LOCATION_MODE);
+  const [queueSettings, setQueueSettings] = useState({});
   const [adminForm, setAdminForm] = useState({
     name: "",
     phone: "",
@@ -89,6 +92,13 @@ function AdminDashboardPage() {
   const [isSavingBumpDown, setIsSavingBumpDown] = useState(false);
   const [isSavingTimeout, setIsSavingTimeout] = useState(false);
   const [isSavingLocationMode, setIsSavingLocationMode] = useState(false);
+  const [isEditingTestLocation, setIsEditingTestLocation] = useState(false);
+  const [isSavingTestLocation, setIsSavingTestLocation] = useState(false);
+  const [testLocationDraft, setTestLocationDraft] = useState({
+    latitude: DEFAULT_TEST_STORE_LOCATION.latitude,
+    longitude: DEFAULT_TEST_STORE_LOCATION.longitude,
+    radiusMeters: DEFAULT_TEST_STORE_LOCATION.radiusMeters,
+  });
   const [secretTapCount, setSecretTapCount] = useState(0);
   const [showSecretLocationModal, setShowSecretLocationModal] = useState(false);
 
@@ -111,10 +121,27 @@ function AdminDashboardPage() {
   useEffect(() => {
     const unsubscribe = subscribeToQueueSettings(
       (settings) => {
-        const nextTimeout = settings.notifiedTimeoutSeconds || 30;
+        const nextSettings = settings || {};
+        setQueueSettings(nextSettings);
+        const nextTimeout = nextSettings.notifiedTimeoutSeconds || 30;
         setNotifiedTimeout(nextTimeout);
         setTimeoutDraft(nextTimeout);
-        setLocationMode(normalizeStoreLocationMode(settings.locationMode));
+        setLocationMode(normalizeStoreLocationMode(nextSettings.locationMode));
+        setTestLocationDraft({
+          latitude:
+            Number.isFinite(Number(nextSettings.testLocationLatitude))
+              ? Number(nextSettings.testLocationLatitude)
+              : DEFAULT_TEST_STORE_LOCATION.latitude,
+          longitude:
+            Number.isFinite(Number(nextSettings.testLocationLongitude))
+              ? Number(nextSettings.testLocationLongitude)
+              : DEFAULT_TEST_STORE_LOCATION.longitude,
+          radiusMeters:
+            Number.isFinite(Number(nextSettings.testLocationRadiusMeters)) &&
+            Number(nextSettings.testLocationRadiusMeters) > 0
+              ? Number(nextSettings.testLocationRadiusMeters)
+              : DEFAULT_TEST_STORE_LOCATION.radiusMeters,
+        });
       },
       (settingsError) => {
         console.error("Failed to load settings:", settingsError);
@@ -167,6 +194,72 @@ function AdminDashboardPage() {
       setError("Failed to switch queue location mode.");
     } finally {
       setIsSavingLocationMode(false);
+    }
+  }
+
+  function handleTestLocationDraftChange(field, value) {
+    setTestLocationDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function resetTestLocationDraft() {
+    setTestLocationDraft({
+      latitude:
+        Number.isFinite(Number(queueSettings.testLocationLatitude))
+          ? Number(queueSettings.testLocationLatitude)
+          : DEFAULT_TEST_STORE_LOCATION.latitude,
+      longitude:
+        Number.isFinite(Number(queueSettings.testLocationLongitude))
+          ? Number(queueSettings.testLocationLongitude)
+          : DEFAULT_TEST_STORE_LOCATION.longitude,
+      radiusMeters:
+        Number.isFinite(Number(queueSettings.testLocationRadiusMeters)) &&
+        Number(queueSettings.testLocationRadiusMeters) > 0
+          ? Number(queueSettings.testLocationRadiusMeters)
+          : DEFAULT_TEST_STORE_LOCATION.radiusMeters,
+    });
+  }
+
+  async function handleSaveTestLocation() {
+    const latitude = Number(testLocationDraft.latitude);
+    const longitude = Number(testLocationDraft.longitude);
+    const radiusMeters = Number(testLocationDraft.radiusMeters);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setError("Enter valid latitude and longitude values.");
+      return;
+    }
+
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+      setError("Enter a radius greater than 0 meters.");
+      return;
+    }
+
+    setError("");
+    setIsSavingTestLocation(true);
+
+    try {
+      await updateQueueSettings({
+        testLocationLatitude: latitude,
+        testLocationLongitude: longitude,
+        testLocationRadiusMeters: radiusMeters,
+      });
+      setQueueSettings((current) => ({
+        ...current,
+        testLocationLatitude: latitude,
+        testLocationLongitude: longitude,
+        testLocationRadiusMeters: radiusMeters,
+      }));
+      setIsEditingTestLocation(false);
+      setSecretTapCount(0);
+    } catch (saveError) {
+      setError(
+        getFriendlyError(saveError, "Failed to save the test location settings.")
+      );
+    } finally {
+      setIsSavingTestLocation(false);
     }
   }
 
@@ -288,13 +381,13 @@ function AdminDashboardPage() {
   const waitingEntries = deferredEntries.filter((entry) => entry.status === "waiting");
   const totalPartiesInQueue = deferredEntries.length;
   const nextUp = waitingEntries[0] || deferredEntries[0] || null;
-  const activeStoreLocation = getStoreLocation(locationMode);
+  const activeStoreLocation = getStoreLocation(locationMode, queueSettings);
 
   return (
     <main className="min-h-screen bg-admin-base px-4 py-6 text-admin-text sm:px-6 lg:px-8">
       {showSecretLocationModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-admin-base/75 px-4 backdrop-blur-sm">
-          <div className="admin-panel w-full max-w-lg p-6 sm:p-7">
+          <div className="admin-panel w-full max-w-2xl p-6 sm:p-7">
             <p className="font-admin text-sm font-semibold uppercase tracking-[0.28em] text-admin-cyan">
               Queue location mode
             </p>
@@ -303,10 +396,10 @@ function AdminDashboardPage() {
             </h2>
             <p className="mt-4 text-sm leading-7 text-admin-mute">
               This changes which store location new public queue joins use for the
-              2.5 km geofence. Existing queue entries keep the mode they were created with.
+              geofence. Existing queue entries keep the mode they were created with.
             </p>
 
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 grid gap-4 lg:grid-cols-2">
               <button
                 type="button"
                 className="admin-button w-full justify-between bg-admin-cyan/12 text-admin-text ring-1 ring-admin-cyan/25 hover:bg-admin-cyan/18 focus:ring-admin-cyan/20"
@@ -332,9 +425,90 @@ function AdminDashboardPage() {
             </div>
 
             <div className="mt-6 rounded-2xl border border-admin-line/40 bg-admin-base/55 p-4 text-sm text-admin-mute">
-              Current mode: {locationMode}
-              <br />
-              Store: {activeStoreLocation.name}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-admin-text">Test location</p>
+                  <p className="mt-1">
+                    Active radius: {formatDistanceMeters(activeStoreLocation.radiusMeters)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="admin-button bg-white/10 px-4 py-2 text-xs text-admin-text ring-1 ring-white/15 hover:bg-white/16 focus:ring-white/10"
+                  onClick={() => {
+                    if (isEditingTestLocation) {
+                      resetTestLocationDraft();
+                    }
+                    setIsEditingTestLocation((current) => !current);
+                  }}
+                  disabled={isSavingLocationMode || isSavingTestLocation}
+                >
+                  {isEditingTestLocation ? "Cancel edit" : "Edit"}
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-admin-mute">
+                    Latitude
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10 disabled:cursor-not-allowed disabled:opacity-55"
+                    type="number"
+                    step="0.000001"
+                    value={testLocationDraft.latitude}
+                    onChange={(event) =>
+                      handleTestLocationDraftChange("latitude", event.target.value)
+                    }
+                    disabled={!isEditingTestLocation || isSavingTestLocation}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-admin-mute">
+                    Longitude
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10 disabled:cursor-not-allowed disabled:opacity-55"
+                    type="number"
+                    step="0.000001"
+                    value={testLocationDraft.longitude}
+                    onChange={(event) =>
+                      handleTestLocationDraftChange("longitude", event.target.value)
+                    }
+                    disabled={!isEditingTestLocation || isSavingTestLocation}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-admin-mute">
+                    Radius (m)
+                  </span>
+                  <input
+                    className="w-full rounded-2xl border border-admin-line bg-admin-base/70 px-4 py-3 text-base text-admin-text outline-none transition focus:border-admin-cyan/50 focus:ring-4 focus:ring-admin-cyan/10 disabled:cursor-not-allowed disabled:opacity-55"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={testLocationDraft.radiusMeters}
+                    onChange={(event) =>
+                      handleTestLocationDraftChange("radiusMeters", event.target.value)
+                    }
+                    disabled={!isEditingTestLocation || isSavingTestLocation}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-admin-mute">
+                  Current values are saved in Firestore and used for test mode joins.
+                </p>
+                <button
+                  type="button"
+                  className="admin-button bg-admin-cyan/15 px-4 py-2 text-xs text-admin-cyan ring-1 ring-admin-cyan/30 hover:bg-admin-cyan/22 focus:ring-admin-cyan/20 disabled:cursor-not-allowed disabled:opacity-55"
+                  onClick={handleSaveTestLocation}
+                  disabled={!isEditingTestLocation || isSavingTestLocation}
+                >
+                  {isSavingTestLocation ? "Saving..." : "Save test location"}
+                </button>
+              </div>
             </div>
 
             <button

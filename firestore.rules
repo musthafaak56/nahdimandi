@@ -35,6 +35,32 @@ service cloud.firestore {
         || (mode == 'test' && storeName == '394F+278, Madeena Rd, Kuttiyeri, Kerala 670141');
     }
 
+    function getTestLocationLatitude() {
+      return exists(/databases/$(database)/documents/settings/queue)
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationLatitude is number
+          ? get(/databases/$(database)/documents/settings/queue).data.testLocationLatitude
+          : 12.0551063;
+    }
+
+    function getTestLocationLongitude() {
+      return exists(/databases/$(database)/documents/settings/queue)
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationLongitude is number
+          ? get(/databases/$(database)/documents/settings/queue).data.testLocationLongitude
+          : 75.3731213;
+    }
+
+    function getTestLocationRadiusMeters() {
+      return exists(/databases/$(database)/documents/settings/queue)
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationRadiusMeters is number
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationRadiusMeters > 0
+          ? get(/databases/$(database)/documents/settings/queue).data.testLocationRadiusMeters
+          : 2500;
+    }
+
+    function getLocationRadiusMeters(mode) {
+      return mode == 'test' ? getTestLocationRadiusMeters() : 2500;
+    }
+
     function isMatchingLocationSnapshot(location, mode, requireWithinRadius) {
       return location is map
         && location.lat is number
@@ -47,7 +73,7 @@ service cloud.firestore {
         && location.accuracyMeters >= 0
         && location.accuracyMeters <= 1000
         && location.distanceMeters >= 0
-        && (!requireWithinRadius || (location.withinRadius == true && location.distanceMeters <= 2500));
+        && (!requireWithinRadius || (location.withinRadius == true && location.distanceMeters <= getLocationRadiusMeters(mode)));
     }
 
     function isJoinLocationInsideMode(location, mode) {
@@ -59,10 +85,10 @@ service cloud.firestore {
             && location.lng >= 75.40552254473083
             && location.lng <= 75.42388065526916)
           || (mode == 'test'
-            && location.lat >= 12.04612318825009
-            && location.lat <= 12.06408941174991
-            && location.lng >= 75.3639412481664
-            && location.lng <= 75.3823013518336)
+            && location.lat >= getTestLocationLatitude() - (getTestLocationRadiusMeters() / 111000.0)
+            && location.lat <= getTestLocationLatitude() + (getTestLocationRadiusMeters() / 111000.0)
+            && location.lng >= getTestLocationLongitude() - (getTestLocationRadiusMeters() / 111000.0)
+            && location.lng <= getTestLocationLongitude() + (getTestLocationRadiusMeters() / 111000.0))
         );
     }
 

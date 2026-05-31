@@ -18,6 +18,7 @@ import {
   bumpDownQueueEntry,
   ACTIVE_QUEUE_STATUSES,
   confirmTableReadyArrival,
+  subscribeToQueueSettings,
   subscribeToQueueEntry,
   subscribeToActiveQueue,
 } from "../lib/queue";
@@ -38,6 +39,7 @@ function StatusPage() {
   const queueDate = searchParams.get("date");
   const [entry, setEntry] = useState(null);
   const [queueEntries, setQueueEntries] = useState([]);
+  const [queueSettings, setQueueSettings] = useState({});
   const [error, setError] = useState("");
   const [isBooting, setIsBooting] = useState(true);
   const [showReadyOverlay, setShowReadyOverlay] = useState(true);
@@ -56,13 +58,42 @@ function StatusPage() {
     if (withinRadius) {
       return `Location confirmed. You are about ${formatDistanceMeters(
         distanceMeters
-      )} away and within the 2.5 km arrival zone.`;
+      )} away and within the arrival zone.`;
     }
 
     return `You are about ${formatDistanceMeters(
       distanceMeters
-    )} away. Move within 2.5 km of the restaurant, then try the location check again.`;
+    )} away. Move within the arrival zone of the restaurant, then try the location check again.`;
   }
+
+  useEffect(() => {
+    let isActive = true;
+    let unsubscribe = () => {};
+
+    ensureAnonymousSession()
+      .then(() => {
+        if (!isActive) {
+          return;
+        }
+
+        unsubscribe = subscribeToQueueSettings(
+          (settings) => {
+            if (!isActive) {
+              return;
+            }
+
+            setQueueSettings(settings || {});
+          },
+          () => {}
+        );
+      })
+      .catch(() => {});
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -455,7 +486,8 @@ function StatusPage() {
   }
 
   const activeStoreLocation = getStoreLocation(
-    normalizeStoreLocationMode(entry?.locationMode || DEFAULT_STORE_LOCATION_MODE)
+    normalizeStoreLocationMode(entry?.locationMode || DEFAULT_STORE_LOCATION_MODE),
+    queueSettings
   );
   const positionIndex = queueEntries.findIndex((item) => item.id === entryId);
   const position = positionIndex >= 0 ? positionIndex + 1 : null;
@@ -513,18 +545,18 @@ function StatusPage() {
             <h1 className="mt-3 font-display text-4xl text-ink">
               Your table is ready.
             </h1>
-            <p className="mt-4 text-base leading-7 text-ink/75">
-              Please come to the front desk now. {timeLeft !== null ? (
-                <span className="block mt-2 font-bold text-emerald-700 animate-pulse">
-                  Head to the desk within {timeLeft} seconds to keep your spot!
-                </span>
+              <p className="mt-4 text-base leading-7 text-ink/75">
+                Please come to the front desk now. {timeLeft !== null ? (
+                  <span className="block mt-2 font-bold text-emerald-700 animate-pulse">
+                    Head to the desk within {timeLeft} seconds to keep your spot!
+                  </span>
               ) : "This alert stays on until you are seated."}
             </p>
             <div className="mt-6 rounded-[1.5rem] border border-stone-900/10 bg-white/70 p-4 text-left">
               <p className="text-sm font-semibold text-ink/80">Automatic live location check</p>
               <p className="mt-2 text-sm leading-6 text-ink/70">
                 We automatically re-check your distance now so the front desk knows
-                whether you are within 2.5 km of the restaurant.
+                whether you are within {formatDistanceMeters(activeStoreLocation.radiusMeters)} of the restaurant.
               </p>
               {isConfirmingArrival ? (
                 <div className="mt-4 rounded-2xl border border-stone-900/10 bg-white/80 px-4 py-3 text-sm text-ink/70">

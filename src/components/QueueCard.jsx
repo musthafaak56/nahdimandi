@@ -10,7 +10,9 @@ function buildLocationStatusLabel(location, storeName, label) {
   }
 
   const distanceLabel = formatDistanceMeters(location.distanceMeters);
-  const rangeLabel = location.withinRadius ? "inside 2.5 km" : "outside 2.5 km";
+  const rangeLabel = location.withinRadius
+    ? "inside the arrival zone"
+    : "outside the arrival zone";
 
   return `${label}: ${distanceLabel} from ${storeName || "the store"} (${rangeLabel})`;
 }

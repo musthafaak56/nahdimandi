@@ -31,6 +31,7 @@ function JoinPage() {
   const [resumeQueueEntry, setResumeQueueEntry] = useState(null);
   const [locationPermission, setLocationPermission] = useState("unknown");
   const [locationMode, setLocationMode] = useState(DEFAULT_STORE_LOCATION_MODE);
+  const [queueSettings, setQueueSettings] = useState({});
   const [error, setError] = useState("");
   const [isBooting, setIsBooting] = useState(true);
   const [isCheckingLocation, setIsCheckingLocation] = useState(false);
@@ -131,6 +132,7 @@ function JoinPage() {
 
     return subscribeToQueueSettings(
       (settings) => {
+        setQueueSettings(settings || {});
         setLocationMode(
           normalizeStoreLocationMode(settings?.locationMode)
         );
@@ -149,7 +151,7 @@ function JoinPage() {
     };
   }, []);
 
-  const activeStoreLocation = getStoreLocation(locationMode);
+  const activeStoreLocation = getStoreLocation(locationMode, queueSettings);
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -257,7 +259,9 @@ function JoinPage() {
 
       if (!proximity.withinRadius) {
         setError(
-          `Queue check-in is only available within 2.5 km of ${activeStoreLocation.name}. You are about ${formatDistanceMeters(
+          `Queue check-in is only available within ${formatDistanceMeters(
+            activeStoreLocation.radiusMeters
+          )} of ${activeStoreLocation.name}. You are about ${formatDistanceMeters(
             proximity.distanceMeters
           )} away.`
         );
@@ -293,7 +297,9 @@ function JoinPage() {
     } catch (submitError) {
       if (submitError?.code === "permission-denied") {
         setError(
-          "We could not verify your public queue check-in yet. Make sure location access is allowed and try again while you are within 2.5 km of the restaurant."
+        `We could not verify your public queue check-in yet. Make sure location access is allowed and try again while you are within ${formatDistanceMeters(
+          activeStoreLocation.radiusMeters
+        )} of the restaurant.`
         );
       } else {
         setError(
@@ -382,8 +388,9 @@ function JoinPage() {
             <div className="rounded-[1.5rem] border border-amber-500/20 bg-amber-500/10 p-4">
               <p className="text-sm font-semibold text-amber-900">Step 1 of 2: allow location access</p>
               <p className="mt-1 text-sm leading-6 text-amber-900/75">
-                Tap the browser prompt below so we can verify you are within 2.5 km
-                of {activeStoreLocation.name}. This is required before joining the queue.
+                Tap the browser prompt below so we can verify you are within {formatDistanceMeters(
+                  activeStoreLocation.radiusMeters
+                )} of {activeStoreLocation.name}. This is required before joining the queue.
               </p>
               <button
                 type="button"

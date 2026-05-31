@@ -7,8 +7,13 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
 - Public queue check-in form at `/` and `/join`
 - Live customer status page at `/status?id={queueId}`
 - Browser push notification opt-in using Firebase Cloud Messaging
+- Table-ready countdown and live location confirmation on the customer status page
 - Protected admin login at `/admin/login`
 - Real-time admin dashboard at `/admin`
+- Paginated queue history with day filtering
+- All-time analytics for peak hours, peak days, and peak dates
+- Local 10-digit phone entry, with admin call actions dialing `+91`
+- Editable test geofence settings from the admin secret modal
 
 ## Local setup
 
@@ -32,16 +37,25 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
 
 ## Firestore model
 
-### Private queue collection
+### Date-scoped queue collection
 
-`queue/{queueId}`
+`customers_per_day/{dateKey}/entries/{queueId}`
 
 - `name`
 - `phone`
 - `partySize`
+- `queueDate`
+- `queueNumber`
 - `status`
 - `timestamp`
 - `ownerUid`
+- `joinSource`
+- `locationMode`
+- `storeName`
+- `location`
+- `tableReadyLocation`
+- `tableReadyCheckedAt`
+- `respondedAt`
 - `fcmToken`
 - `fcmTokenUpdatedAt`
 
@@ -50,8 +64,33 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
 `queue_public/{queueId}`
 
 - `partySize`
+- `queueDate`
+- `queueNumber`
 - `status`
 - `timestamp`
 
 The public mirror exposes only queue order data so customers can see position updates without reading other guests' personal details.
+
+### Queue counter
+
+`queue_counters/{dateKey}`
+
+- `lastQueueNumber`
+- `lastEntryId`
+- `lastOwnerUid`
+- `updatedAt`
+
+This keeps queue numbers sequential within each restaurant day.
+
+### Queue settings
+
+`settings/queue`
+
+- `locationMode`
+- `notifiedTimeoutSeconds`
+- `testLocationLatitude`
+- `testLocationLongitude`
+- `testLocationRadiusMeters`
+
+The test location fields control the editable geofence used in test mode from the admin secret modal.
 # nahdimandi

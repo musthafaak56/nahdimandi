@@ -22,10 +22,11 @@ import { auth, db, isPasswordUser, waitForInitialAuth } from "./firebase";
 import { getRestaurantDateKey } from "./time";
 import {
   DEFAULT_STORE_LOCATION_MODE,
+  DEFAULT_TEST_STORE_LOCATION,
   getStoreLocation,
   normalizeStoreLocationMode,
 } from "../../shared/storeLocations";
-import { calculateDistanceMeters } from "./geofence";
+import { calculateDistanceMeters, formatDistanceMeters } from "./geofence";
 
 export const ACTIVE_QUEUE_STATUSES = ["waiting", "notified"];
 export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
@@ -108,7 +109,9 @@ async function createQueueEntryViaTransaction({
 
     if (joinSource === "public" && !normalizedLocation?.withinRadius) {
       const distanceError = new Error(
-        `Queue check-in is only available within 2.5 km of ${storeLocation.name}.`
+        `Queue check-in is only available within ${formatDistanceMeters(
+          storeLocation.radiusMeters
+        )} of ${storeLocation.name}.`
       );
       distanceError.code = "failed-precondition";
       throw distanceError;
@@ -178,17 +181,21 @@ export async function createQueueEntry({
     throw new Error("You must be signed in before creating a queue entry.");
   }
 
+  const queueSettingsSnapshot = await getDoc(getQueueSettingsRef());
+  const queueSettingsData = queueSettingsSnapshot.data() || {};
   const locationMode = normalizeStoreLocationMode(
-    (await getDoc(getQueueSettingsRef())).data()?.locationMode || DEFAULT_STORE_LOCATION_MODE
+    queueSettingsData.locationMode || DEFAULT_STORE_LOCATION_MODE
   );
-  const storeLocation = getStoreLocation(locationMode);
+  const storeLocation = getStoreLocation(locationMode, queueSettingsData);
   const joinSource = isPasswordUser(user) ? "admin" : "public";
   const normalizedLocation =
     joinSource === "public" ? buildLocationSnapshot(location, storeLocation) : null;
 
   if (joinSource === "public" && !normalizedLocation?.withinRadius) {
     const distanceError = new Error(
-      `Queue check-in is only available within 2.5 km of ${storeLocation.name}.`
+      `Queue check-in is only available within ${formatDistanceMeters(
+        storeLocation.radiusMeters
+      )} of ${storeLocation.name}.`
     );
     distanceError.code = "failed-precondition";
     throw distanceError;
@@ -244,8 +251,11 @@ export async function confirmTableReadyArrival(entryId, queueDate, location) {
     throw statusError;
   }
 
+  const queueSettingsSnapshot = await getDoc(getQueueSettingsRef());
+  const queueSettingsData = queueSettingsSnapshot.data() || {};
   const storeLocation = getStoreLocation(
-    normalizeStoreLocationMode(entry.locationMode || DEFAULT_STORE_LOCATION_MODE)
+    normalizeStoreLocationMode(entry.locationMode || DEFAULT_STORE_LOCATION_MODE),
+    queueSettingsData
   );
   const normalizedLocation = buildLocationSnapshot(location, storeLocation);
 
@@ -313,6 +323,9 @@ export function subscribeToQueueSettings(onNext, onError) {
         onNext({
           notifiedTimeoutSeconds: 30,
           locationMode: DEFAULT_STORE_LOCATION_MODE,
+          testLocationLatitude: DEFAULT_TEST_STORE_LOCATION.latitude,
+          testLocationLongitude: DEFAULT_TEST_STORE_LOCATION.longitude,
+          testLocationRadiusMeters: DEFAULT_TEST_STORE_LOCATION.radiusMeters,
         });
       }
     },

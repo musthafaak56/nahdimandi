@@ -346,7 +346,7 @@ function AdminHistoryView() {
         }
       >
         {formatDistanceMeters(location.distanceMeters)} from {storeName || "the store"} (
-        {location.withinRadius ? "inside" : "outside"} 2.5 km)
+        {location.withinRadius ? "inside" : "outside"} the arrival zone)
       </span>
     );
   }
