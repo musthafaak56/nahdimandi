@@ -142,6 +142,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /{path=**}/entries/{entryId} {
+      allow get, list: if isAdmin();
+    }
+
     match /queue_public/{entryId} {
       // Anyone can read the public queue (for dashboard/status position)
       allow read: if isAuthenticated();

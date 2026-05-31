@@ -2,14 +2,18 @@ import {
   collectionGroup,
   collection,
   doc,
+  endBefore,
   getDoc,
   getDocs,
+  limit,
+  limitToLast,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  startAfter,
   updateDoc,
   where,
   writeBatch,
@@ -28,6 +32,13 @@ export const LAST_QUEUE_ENTRY_KEY = "nahdi-mandi:lastQueueEntryId";
 
 function mapDocs(snapshot) {
   return snapshot.docs.map((document) => ({
+    id: document.id,
+    ...document.data({ serverTimestamps: "estimate" }),
+  }));
+}
+
+function mapDocsFromSnapshots(docSnapshots) {
+  return docSnapshots.map((document) => ({
     id: document.id,
     ...document.data({ serverTimestamps: "estimate" }),
   }));
@@ -412,6 +423,46 @@ export async function getQueueHistoryByDate(date) {
 
   const datedCollectionSnapshot = await getDocs(datedCollectionQuery);
   return mapDocs(datedCollectionSnapshot);
+}
+
+export async function getQueueHistoryPageByDate(
+  date,
+  { pageSize = 10, startAfterDoc = null, endBeforeDoc = null } = {}
+) {
+  const baseQuery = query(
+    collection(db, "customers_per_day", date, "entries"),
+    orderBy("timestamp", "asc")
+  );
+  const fetchLimit = pageSize + 1;
+
+  let pageQuery = query(baseQuery, limit(fetchLimit));
+  if (startAfterDoc) {
+    pageQuery = query(baseQuery, startAfter(startAfterDoc), limit(fetchLimit));
+  } else if (endBeforeDoc) {
+    pageQuery = query(baseQuery, endBefore(endBeforeDoc), limitToLast(fetchLimit));
+  }
+
+  const pageSnapshot = await getDocs(pageQuery);
+  const pageDocs = [...pageSnapshot.docs];
+  const isNextPageRequest = Boolean(startAfterDoc);
+  const isPreviousPageRequest = Boolean(endBeforeDoc);
+  const hasExtraDoc = pageDocs.length > pageSize;
+
+  let visibleDocs = pageDocs;
+
+  if (pageDocs.length > pageSize) {
+    visibleDocs = isPreviousPageRequest
+      ? pageDocs.slice(pageDocs.length - pageSize)
+      : pageDocs.slice(0, pageSize);
+  }
+
+  return {
+    entries: mapDocsFromSnapshots(visibleDocs),
+    firstDoc: visibleDocs[0] || null,
+    lastDoc: visibleDocs[visibleDocs.length - 1] || null,
+    hasNextPage: isPreviousPageRequest ? true : hasExtraDoc,
+    hasPreviousPage: isNextPageRequest ? true : isPreviousPageRequest ? hasExtraDoc : false,
+  };
 }
 
 export async function getAllQueueHistory() {
