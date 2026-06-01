@@ -1,6 +1,21 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import {
+  getE2EState,
+  isE2EMode,
+  signInAnonymousE2E,
+  signInPasswordE2E,
+  signOutE2E,
+  subscribeToE2EAuth,
+  waitForE2EAuth,
+} from "./e2eRuntime";
 
 const envFirebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -50,6 +65,11 @@ let initialAuthPromise = Promise.resolve(null);
 let initializeFirebasePromise = null;
 
 function setupInitialAuthListener() {
+  if (isE2EMode()) {
+    initialAuthPromise = Promise.resolve(getE2EState()?.auth.currentUser ?? null);
+    return;
+  }
+
   initialAuthPromise = new Promise((resolve) => {
     resolveInitialAuth = resolve;
   });
@@ -107,6 +127,28 @@ export async function initializeFirebase() {
   }
 
   initializeFirebasePromise = (async () => {
+    if (isE2EMode()) {
+      const runtimeState = getE2EState();
+      firebaseConfig = {
+        apiKey: "e2e-api-key",
+        authDomain: "e2e.firebaseapp.com",
+        projectId: "e2e-project",
+        storageBucket: "e2e.appspot.com",
+        messagingSenderId: "e2e-sender",
+        appId: "e2e-app-id",
+      };
+      vapidKey = "e2e-vapid-key";
+      missingFirebaseConfig = [];
+      firebaseInitSource = "e2e";
+      firebaseInitError = "";
+      isFirebaseConfigured = true;
+      app = {};
+      auth = runtimeState.auth;
+      db = { __mock: true };
+      setupInitialAuthListener();
+      return true;
+    }
+
     if (applyFirebaseConfig(envFirebaseConfig, "env")) {
       return true;
     }
@@ -133,10 +175,18 @@ export async function initializeFirebase() {
 }
 
 export async function waitForInitialAuth() {
+  if (isE2EMode()) {
+    return waitForE2EAuth();
+  }
+
   return auth?.currentUser ?? initialAuthPromise;
 }
 
 export async function ensureAnonymousSession() {
+  if (isE2EMode()) {
+    return signInAnonymousE2E();
+  }
+
   if (!auth) {
     throw new Error("Firebase is not configured.");
   }
@@ -149,6 +199,39 @@ export async function ensureAnonymousSession() {
 
   const credential = await signInAnonymously(auth);
   return credential.user;
+}
+
+export function subscribeToAuthState(onNext) {
+  if (isE2EMode()) {
+    return subscribeToE2EAuth(onNext);
+  }
+
+  return onAuthStateChanged(auth, onNext);
+}
+
+export async function signInAdminUser(email, password) {
+  if (isE2EMode()) {
+    return signInPasswordE2E(email, password);
+  }
+
+  if (!auth) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return credential.user;
+}
+
+export async function signOutCurrentUser() {
+  if (isE2EMode()) {
+    return signOutE2E();
+  }
+
+  if (!auth) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  return signOut(auth);
 }
 
 export function isPasswordUser(user) {

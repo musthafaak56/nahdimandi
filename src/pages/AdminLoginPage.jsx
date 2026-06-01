@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { useAuthState } from "../components/AuthProvider";
-import { auth } from "../lib/firebase";
+import { signInAdminUser } from "../lib/firebase";
 import { getFriendlyError } from "../lib/errors";
 
 function AdminLoginPage() {
@@ -22,7 +21,7 @@ function AdminLoginPage() {
     setIsSubmitting(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInAdminUser(email.trim(), password);
     } catch (loginError) {
       setError(
         getFriendlyError(

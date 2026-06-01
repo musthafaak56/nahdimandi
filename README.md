@@ -14,6 +14,7 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
 - All-time analytics for peak hours, peak days, and peak dates
 - Local 10-digit phone entry, with admin call actions dialing `+91`
 - Editable test geofence settings from the admin secret modal
+- Admin Contact tab with shared contact details and support tickets to the super-admin
 
 ## Local setup
 
@@ -93,4 +94,23 @@ This keeps queue numbers sequential within each restaurant day.
 - `testLocationRadiusMeters`
 
 The test location fields control the editable geofence used in test mode from the admin secret modal.
+
+### Support tickets
+
+`support_tickets/{ticketId}`
+
+- `subject`
+- `message`
+- `contactPhone`
+- `portfolioUrl`
+- `ticketToEmail`
+- `fromUid`
+- `fromEmail`
+- `fromDisplayName`
+- `status`
+- `createdAt`
+- `updatedAt`
+- `resolvedAt`
+
+Admins can create tickets from the Contact tab in the dashboard. The super-admin inbox is restricted to `musthafaak56@gmail.com`.
 # nahdimandi

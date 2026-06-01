@@ -1,6 +1,7 @@
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { getMessaging, getToken, isSupported, onMessage } from "firebase/messaging";
 import { app, db, firebaseConfig, vapidKey } from "./firebase";
+import { isE2EMode, requestE2ENotifications, subscribeToE2EForegroundMessages } from "./e2eRuntime";
 
 function buildMessagingWorkerUrl() {
   const url = new URL("/firebase-messaging-sw.js", window.location.origin);
@@ -15,6 +16,10 @@ function buildMessagingWorkerUrl() {
 }
 
 export async function canUsePushNotifications() {
+  if (isE2EMode()) {
+    return true;
+  }
+
   if (typeof window === "undefined") {
     return false;
   }
@@ -27,6 +32,10 @@ export async function canUsePushNotifications() {
 }
 
 export async function requestQueueNotifications(queueId, queueDate) {
+  if (isE2EMode()) {
+    return requestE2ENotifications(queueId, queueDate);
+  }
+
   const supported = await canUsePushNotifications();
 
   if (!supported) {
@@ -70,6 +79,10 @@ export async function requestQueueNotifications(queueId, queueDate) {
 }
 
 export async function subscribeToForegroundMessages(onReceive) {
+  if (isE2EMode()) {
+    return subscribeToE2EForegroundMessages(onReceive);
+  }
+
   const supported = await canUsePushNotifications();
 
   if (!supported) {

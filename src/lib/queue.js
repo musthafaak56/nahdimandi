@@ -19,6 +19,22 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { auth, db, isPasswordUser, waitForInitialAuth } from "./firebase";
+import {
+  bumpDownE2EQueueEntry,
+  confirmE2ETableReadyArrival,
+  createE2EQueueEntry,
+  deleteE2EQueueEntryPermanently,
+  getE2EAllQueueHistory,
+  getE2EQueueHistoryByDate,
+  getE2EQueueHistoryPageByDate,
+  isE2EMode,
+  subscribeToE2EActiveQueue,
+  subscribeToE2EAdminQueue,
+  subscribeToE2EQueueEntry,
+  subscribeToE2EQueueSettings,
+  updateE2EQueueSettings,
+  updateE2EQueueStatus,
+} from "./e2eRuntime";
 import { getRestaurantDateKey } from "./time";
 import {
   DEFAULT_STORE_LOCATION_MODE,
@@ -175,6 +191,10 @@ export async function createQueueEntry({
   location = null,
   persistLocal = true,
 }) {
+  if (isE2EMode()) {
+    return createE2EQueueEntry({ name, phone, partySize, location, persistLocal });
+  }
+
   const user = auth?.currentUser ?? (await waitForInitialAuth());
 
   if (!user) {
@@ -222,6 +242,10 @@ export async function createQueueEntry({
 }
 
 export async function confirmTableReadyArrival(entryId, queueDate, location) {
+  if (isE2EMode()) {
+    return confirmE2ETableReadyArrival(entryId, queueDate, location);
+  }
+
   const user = auth?.currentUser ?? (await waitForInitialAuth());
 
   if (!user) {
@@ -272,10 +296,18 @@ export async function confirmTableReadyArrival(entryId, queueDate, location) {
 }
 
 export function subscribeToQueueEntry(queueDate, entryId, onNext, onError) {
+  if (isE2EMode()) {
+    return subscribeToE2EQueueEntry(queueDate, entryId, onNext, onError);
+  }
+
   return onSnapshot(getCustomerEntryRef(queueDate, entryId), onNext, onError);
 }
 
 export function subscribeToActiveQueue(queueDate, onNext, onError) {
+  if (isE2EMode()) {
+    return subscribeToE2EActiveQueue(queueDate, onNext, onError);
+  }
+
   const activeQueueQuery = query(
     collection(db, "queue_public"),
     where("queueDate", "==", queueDate),
@@ -295,6 +327,10 @@ export function subscribeToActiveQueue(queueDate, onNext, onError) {
 }
 
 export function subscribeToAdminQueue(onNext, onError) {
+  if (isE2EMode()) {
+    return subscribeToE2EAdminQueue(onNext, onError);
+  }
+
   const todayKey = getRestaurantDateKey();
   const adminQueueQuery = query(
     collection(db, "customers_per_day", todayKey, "entries"),
@@ -314,6 +350,10 @@ export function subscribeToAdminQueue(onNext, onError) {
 }
 
 export function subscribeToQueueSettings(onNext, onError) {
+  if (isE2EMode()) {
+    return subscribeToE2EQueueSettings(onNext, onError);
+  }
+
   return onSnapshot(
     getQueueSettingsRef(),
     (snapshot) => {
@@ -334,10 +374,18 @@ export function subscribeToQueueSettings(onNext, onError) {
 }
 
 export async function updateQueueSettings(settings) {
+  if (isE2EMode()) {
+    return updateE2EQueueSettings(settings);
+  }
+
   await setDoc(getQueueSettingsRef(), settings, { merge: true });
 }
 
 export async function updateQueueStatus(entryId, status, options = {}) {
+  if (isE2EMode()) {
+    return updateE2EQueueStatus(entryId, status, options);
+  }
+
   const queueDate = options.queueDate;
 
   if (!queueDate) {
@@ -369,6 +417,10 @@ export async function acknowledgeNotification(entryId, queueDate) {
     throw new Error("queueDate is required to acknowledge notifications.");
   }
 
+  if (isE2EMode()) {
+    return updateE2EQueueStatus(entryId, "notified", { queueDate });
+  }
+
   const updates = { respondedAt: serverTimestamp() };
   const batch = writeBatch(db);
 
@@ -383,6 +435,10 @@ export async function bumpDownQueueEntry(
   bumpCount,
   extraUpdates = {}
 ) {
+  if (isE2EMode()) {
+    return bumpDownE2EQueueEntry(entryId, currentEntries, bumpCount, extraUpdates);
+  }
+
   const currentEntry = currentEntries.find((entry) => entry.id === entryId);
   const currentIndex = currentEntries.findIndex((entry) => entry.id === entryId);
 
@@ -416,6 +472,10 @@ export async function bumpDownQueueEntry(
 }
 
 export async function deleteQueueEntryPermanently(entry) {
+  if (isE2EMode()) {
+    return deleteE2EQueueEntryPermanently(entry);
+  }
+
   const queueId = entry.queueId || entry.id;
   const queueDate = entry.queueDate;
   const batch = writeBatch(db);
@@ -429,6 +489,10 @@ export async function deleteQueueEntryPermanently(entry) {
 }
 
 export async function getQueueHistoryByDate(date) {
+  if (isE2EMode()) {
+    return getE2EQueueHistoryByDate(date);
+  }
+
   const datedCollectionQuery = query(
     collection(db, "customers_per_day", date, "entries"),
     orderBy("timestamp", "asc")
@@ -442,6 +506,10 @@ export async function getQueueHistoryPageByDate(
   date,
   { pageSize = 10, startAfterDoc = null, endBeforeDoc = null } = {}
 ) {
+  if (isE2EMode()) {
+    return getE2EQueueHistoryPageByDate(date, { pageSize, startAfterDoc, endBeforeDoc });
+  }
+
   const baseQuery = query(
     collection(db, "customers_per_day", date, "entries"),
     orderBy("timestamp", "asc")
@@ -479,6 +547,10 @@ export async function getQueueHistoryPageByDate(
 }
 
 export async function getAllQueueHistory() {
+  if (isE2EMode()) {
+    return getE2EAllQueueHistory();
+  }
+
   const allEntriesSnapshot = await getDocs(collectionGroup(db, "entries"));
   return mapDocs(allEntriesSnapshot);
 }

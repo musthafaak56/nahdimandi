@@ -1,6 +1,5 @@
 import { createContext, startTransition, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, isPasswordUser } from "../lib/firebase";
+import { isPasswordUser, subscribeToAuthState } from "../lib/firebase";
 
 const AuthContext = createContext({
   user: null,
@@ -19,7 +18,7 @@ function AuthProvider({ children }) {
   });
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
+    return subscribeToAuthState((user) => {
       startTransition(() => {
         setState({
           user,

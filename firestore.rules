@@ -10,6 +10,10 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'password';
     }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'musthafaak56@gmail.com';
+    }
     
     function isOwner(resourceData) {
       return isAuthenticated() && request.auth.uid == resourceData.ownerUid;
@@ -209,6 +213,15 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /support_tickets/{ticketId} {
+      allow create: if isAdmin()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.fromEmail == request.auth.token.email
+        && request.resource.data.ticketToEmail == 'musthafaak56@gmail.com'
+        && request.resource.data.status == 'open';
+      allow read, update, delete: if isSuperAdmin();
     }
   }
 }
