@@ -407,8 +407,9 @@ function JoinPage() {
               {!hasLocationAccess && locationPermission === "denied" ? (
                 <p className="mt-3 text-sm font-semibold text-rose-700">
                   If the browser does not show a prompt, location access is already
-                  blocked for this site. Re-enable it from the browser’s site settings,
-                  then tap the button again.
+                  blocked for this site or turned off in your phone’s location settings.
+                  Re-enable it in the browser site settings and, if needed, in your
+                  phone settings, then tap the button again.
                 </p>
               ) : null}
               {locationAccessNotice ? (
