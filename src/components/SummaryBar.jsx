@@ -25,7 +25,7 @@ function SummaryBar({ totalWaiting, totalPartiesInQueue, nextUp }) {
       <div className="sm:col-span-2">
         <SummaryStat
           label="Next up"
-          value={nextUp ? `${nextUp.name} · ${nextUp.partySize}` : "No queue"}
+          value={nextUp ? `${nextUp.name} · ${nextUp.partySize} people` : "No queue"}
           tone="text-admin-amber"
         />
       </div>

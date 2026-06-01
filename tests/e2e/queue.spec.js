@@ -366,7 +366,7 @@ test.describe("Admin dashboard", () => {
     await expect(page).toHaveURL(/\/admin$/);
 
     for (let index = 0; index < 8; index += 1) {
-      await page.getByRole("button", { name: "Queue settings" }).click();
+      await page.getByRole("button", { name: "Add party" }).click();
     }
 
     await expect(page.getByRole("heading", { name: "Switch test or production" })).toBeVisible();
@@ -378,7 +378,7 @@ test.describe("Admin dashboard", () => {
     await expect(page.getByRole("heading", { name: "Switch test or production" })).toHaveCount(0);
 
     for (let index = 0; index < 8; index += 1) {
-      await page.getByRole("button", { name: "Queue settings" }).click();
+      await page.getByRole("button", { name: "Add party" }).click();
     }
 
     await expect(page.getByLabel("Latitude")).toHaveValue("12.123456");

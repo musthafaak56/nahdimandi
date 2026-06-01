@@ -370,7 +370,11 @@ function AdminDashboardPage() {
     }
   }
 
-  function handleSecretTap() {
+  function handleAddPartyButtonClick() {
+    if (isAddingParty) {
+      return;
+    }
+
     setSecretTapCount((current) => {
       const nextCount = current + 1;
 
@@ -533,14 +537,9 @@ function AdminDashboardPage() {
         <header className="rounded-[2rem] border border-admin-line/70 bg-[radial-gradient(circle_at_top_left,_rgba(126,213,168,0.15),_transparent_30%),radial-gradient(circle_at_80%_10%,_rgba(82,199,234,0.18),_transparent_28%),linear-gradient(145deg,_rgba(16,24,32,1)_0%,_rgba(20,33,44,1)_52%,_rgba(12,18,27,1)_100%)] p-6 sm:p-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <button
-                type="button"
-                className="font-admin text-sm font-semibold uppercase tracking-[0.3em] text-admin-cyan outline-none transition hover:text-[#76d4f0] focus-visible:text-[#76d4f0]"
-                onClick={handleSecretTap}
-                aria-label="Queue settings"
-              >
+              <p className="font-admin text-sm font-semibold uppercase tracking-[0.3em] text-admin-cyan">
                 Nahdi Mandi
-              </button>
+              </p>
               <h1 className="mt-3 font-admin text-4xl font-bold tracking-tight sm:text-5xl">
                 Live queue dashboard
               </h1>
@@ -622,6 +621,7 @@ function AdminDashboardPage() {
                     type="submit"
                     className="admin-button bg-admin-cyan text-admin-base hover:bg-[#76d4f0] focus:ring-admin-cyan/20"
                     disabled={isAddingParty}
+                    onClick={handleAddPartyButtonClick}
                   >
                     {isAddingParty ? "Adding..." : "Add party"}
                   </button>
