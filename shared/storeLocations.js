@@ -8,7 +8,7 @@ export const STORE_LOCATION_MODES = {
   },
   test: {
     mode: "test",
-    name: "394F+278, Madeena Rd, Kuttiyeri, Kerala 670141",
+    name: "Test Location",
     latitude: 12.0551063,
     longitude: 75.3731213,
     radiusMeters: 2500,
