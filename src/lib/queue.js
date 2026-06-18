@@ -363,6 +363,7 @@ export function subscribeToQueueSettings(onNext, onError) {
         onNext({
           notifiedTimeoutSeconds: 30,
           locationMode: DEFAULT_STORE_LOCATION_MODE,
+          testLocationName: DEFAULT_TEST_STORE_LOCATION.name,
           testLocationLatitude: DEFAULT_TEST_STORE_LOCATION.latitude,
           testLocationLongitude: DEFAULT_TEST_STORE_LOCATION.longitude,
           testLocationRadiusMeters: DEFAULT_TEST_STORE_LOCATION.radiusMeters,

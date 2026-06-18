@@ -6,13 +6,15 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'password';
+      return isAuthenticated()
+        && request.auth.token.firebase.sign_in_provider == 'password';
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'musthafaak56@gmail.com';
+      return isAdmin()
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.superAdmin == true;
     }
     
     function isOwner(resourceData) {
@@ -34,9 +36,17 @@ service cloud.firestore {
       return mode == 'production' || mode == 'test';
     }
 
+    function getTestLocationName() {
+      return exists(/databases/$(database)/documents/settings/queue)
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationName is string
+        && get(/databases/$(database)/documents/settings/queue).data.testLocationName.size() > 0
+          ? get(/databases/$(database)/documents/settings/queue).data.testLocationName
+          : '394F+278, Madeena Rd, Kuttiyeri, Kerala 670141';
+    }
+
     function isKnownStoreName(storeName, mode) {
       return (mode == 'production' && storeName == 'Nahdi Mandi Kannur')
-        || (mode == 'test' && storeName == '394F+278, Madeena Rd, Kuttiyeri, Kerala 670141');
+        || (mode == 'test' && storeName == getTestLocationName());
     }
 
     function getTestLocationLatitude() {
@@ -65,6 +75,14 @@ service cloud.firestore {
       return mode == 'test' ? getTestLocationRadiusMeters() : 2500;
     }
 
+    function getStoreLatitudeForMode(mode) {
+      return mode == 'test' ? getTestLocationLatitude() : 11.8598637;
+    }
+
+    function getStoreLongitudeForMode(mode) {
+      return mode == 'test' ? getTestLocationLongitude() : 75.4147016;
+    }
+
     function isMatchingLocationSnapshot(location, mode, requireWithinRadius) {
       return location is map
         && location.lat is number
@@ -75,25 +93,22 @@ service cloud.firestore {
         && location.storeMode == mode
         && isKnownStoreName(location.storeName, mode)
         && location.accuracyMeters >= 0
-        && location.accuracyMeters <= 1000
+        && location.accuracyMeters <= 10000
         && location.distanceMeters >= 0
         && (!requireWithinRadius || (location.withinRadius == true && location.distanceMeters <= getLocationRadiusMeters(mode)));
     }
 
+    // Coarse bounding box around the store center sized to the active radius.
+    // Longitude uses /100000 to overestimate the box at Kerala latitudes
+    // (cos(12 deg) ~ 0.978 => 1 deg lng ~ 108577 m) so legitimate points on
+    // the east/west edge of the circle are never rejected. The precise
+    // circle check lives in isMatchingLocationSnapshot via distanceMeters.
     function isJoinLocationInsideMode(location, mode) {
       return isMatchingLocationSnapshot(location, mode, true)
-        && (
-          (mode == 'production'
-            && location.lat >= 11.85088058825009
-            && location.lat <= 11.86884681174991
-            && location.lng >= 75.40552254473083
-            && location.lng <= 75.42388065526916)
-          || (mode == 'test'
-            && location.lat >= getTestLocationLatitude() - (getTestLocationRadiusMeters() / 111000.0)
-            && location.lat <= getTestLocationLatitude() + (getTestLocationRadiusMeters() / 111000.0)
-            && location.lng >= getTestLocationLongitude() - (getTestLocationRadiusMeters() / 111000.0)
-            && location.lng <= getTestLocationLongitude() + (getTestLocationRadiusMeters() / 111000.0))
-        );
+        && location.lat >= getStoreLatitudeForMode(mode) - (getLocationRadiusMeters(mode) / 111000.0)
+        && location.lat <= getStoreLatitudeForMode(mode) + (getLocationRadiusMeters(mode) / 111000.0)
+        && location.lng >= getStoreLongitudeForMode(mode) - (getLocationRadiusMeters(mode) / 100000.0)
+        && location.lng <= getStoreLongitudeForMode(mode) + (getLocationRadiusMeters(mode) / 100000.0);
     }
 
     function isCounterLinkedToEntry(dateKey, entryId, ownerUid, queueNumber) {
@@ -213,6 +228,12 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /admins/{uid} {
+      allow get: if isAuthenticated() && request.auth.uid == uid;
+      allow list: if isSuperAdmin();
+      allow write: if isSuperAdmin();
     }
 
     match /support_tickets/{ticketId} {

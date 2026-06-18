@@ -8,7 +8,7 @@ export const STORE_LOCATION_MODES = {
   },
   test: {
     mode: "test",
-    name: "Test Location",
+    name: "394F+278, Madeena Rd, Kuttiyeri, Kerala 670141",
     latitude: 12.0551063,
     longitude: 75.3731213,
     radiusMeters: 2500,
@@ -33,6 +33,10 @@ export function getStoreLocation(mode = DEFAULT_STORE_LOCATION_MODE, overrides =
 
   return {
     ...baseLocation,
+    name:
+      typeof overrides.testLocationName === "string" && overrides.testLocationName.length > 0
+        ? overrides.testLocationName
+        : baseLocation.name,
     latitude:
       Number.isFinite(Number(overrides.testLocationLatitude))
         ? Number(overrides.testLocationLatitude)

@@ -29,12 +29,13 @@ Real-time restaurant queue management built with React, Firestore, Firebase Auth
    - `Anonymous` for customer queue sessions
    - `Email/Password` for admin access
 2. Create at least one admin user in Firebase Auth using email/password.
-3. Create a Firestore database in production mode or test mode, then deploy:
+3. If you want to use the super-admin inbox features, seed matching `admins/{uid}` documents for those accounts.
+4. Create a Firestore database in production mode or test mode, then deploy:
    - `firestore.rules`
    - `firestore.indexes.json`
-4. Enable Firebase Cloud Messaging and create a web push certificate key pair.
-5. Add the public VAPID key to `VITE_FIREBASE_VAPID_KEY`.
-6. Deploy the site and Firestore rules.
+5. Enable Firebase Cloud Messaging and create a web push certificate key pair.
+6. Add the public VAPID key to `VITE_FIREBASE_VAPID_KEY`.
+7. Deploy the site and Firestore rules.
 
 ## Firestore model
 

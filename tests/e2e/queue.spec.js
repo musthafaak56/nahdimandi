@@ -351,9 +351,12 @@ test.describe("Status page", () => {
 });
 
 test.describe("Admin dashboard", () => {
-  test("lets an admin update and persist the test location from the secret modal", async ({ page }) => {
+  test("lets an admin update the test location and switch back to production from the secret modal", async ({ page }) => {
     const runtime = buildRuntime({
       adminCredentials: ADMIN_CREDENTIALS,
+      queueSettings: {
+        locationMode: "test",
+      },
     });
 
     await setupE2EPage(page, { runtime });
@@ -370,6 +373,7 @@ test.describe("Admin dashboard", () => {
     }
 
     await expect(page.getByRole("heading", { name: "Switch test or production" })).toBeVisible();
+    await page.getByRole("button", { name: "Edit test location" }).click();
     await page.getByLabel("Latitude").fill("12.123456");
     await page.getByLabel("Longitude").fill("75.654321");
     await page.getByLabel("Radius (m)").fill("1800");
@@ -384,6 +388,20 @@ test.describe("Admin dashboard", () => {
     await expect(page.getByLabel("Latitude")).toHaveValue("12.123456");
     await expect(page.getByLabel("Longitude")).toHaveValue("75.654321");
     await expect(page.getByLabel("Radius (m)")).toHaveValue("1800");
+
+    for (let index = 0; index < 8; index += 1) {
+      await page.getByRole("button", { name: "Add party" }).click();
+    }
+
+    await page.getByRole("button", { name: "Use Production Location" }).click();
+
+    await expect(page.getByRole("heading", { name: "Switch test or production" })).toHaveCount(0);
+
+    for (let index = 0; index < 8; index += 1) {
+      await page.getByRole("button", { name: "Add party" }).click();
+    }
+
+    await expect(page.getByRole("button", { name: "Use Production Location" })).toContainText("Active");
   });
 
   test("handles login, live queue actions, history pagination, and ticket creation", async ({ page }) => {
