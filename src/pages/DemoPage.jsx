@@ -1,9 +1,8 @@
-import { useRef, useState } from "react";
-import { Player } from "@remotion/player";
+import { useState } from "react";
+import VideoPlayer from "../components/VideoPlayer";
 import { DemoVideo, FPS, DURATION_IN_FRAMES } from "../remotion/demo/DemoVideo";
 
 export default function DemoPage() {
-  const playerRef = useRef(null);
   const [showHint, setShowHint] = useState(true);
 
   return (
@@ -23,19 +22,14 @@ export default function DemoPage() {
 
         <div className="glass-panel overflow-hidden p-3 sm:p-4">
           <div className="overflow-hidden rounded-[1.4rem] shadow-glow">
-            <Player
-              ref={playerRef}
+            <VideoPlayer
               component={DemoVideo}
               durationInFrames={DURATION_IN_FRAMES}
               fps={FPS}
               compositionWidth={1920}
               compositionHeight={1080}
-              style={{ width: "100%", aspectRatio: "16 / 9" }}
-              controls
               autoPlay
               loop
-              clickToPlay
-              doubleClickToFullscreen
               onPlay={() => setShowHint(false)}
             />
           </div>
@@ -43,7 +37,7 @@ export default function DemoPage() {
 
         {showHint && (
           <p className="mt-4 text-center text-xs text-clove/70">
-            Tap the video to play · double-click for fullscreen
+            Tap the video to play · tap the ⤢ icon for fullscreen
           </p>
         )}
       </div>

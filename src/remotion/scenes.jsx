@@ -1,4 +1,4 @@
-import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { Img, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { colors, fonts, warmBackground, darkBackground } from "./theme";
 import { Badge, Eyebrow, Scene, useCount, useEnter, useFade } from "./ui";
 import { Icon } from "./icons";
@@ -466,25 +466,14 @@ export function OnboardingScene() {
               borderRadius: 24,
               background: colors.white,
               border: `3px solid ${colors.ember}`,
-              display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
-              gridTemplateRows: "repeat(5, 1fr)",
-              padding: 14,
-              gap: 6,
+              padding: 12,
+              flexShrink: 0,
             }}
           >
-            {Array.from({ length: 25 }).map((_, i) => {
-              const on = (i * 7 + (i % 3) * 5) % 5 < 3;
-              return (
-                <div
-                  key={i}
-                  style={{
-                    background: on ? colors.ink : "transparent",
-                    borderRadius: 3,
-                  }}
-                />
-              );
-            })}
+            <Img
+              src={staticFile("qr-nahdimandi.png")}
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 6 }}
+            />
           </div>
           <div>
             <div style={{ fontFamily: fonts.mono, fontSize: 22, letterSpacing: 3, color: colors.ember, fontWeight: 600 }}>
